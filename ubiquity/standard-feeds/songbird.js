@@ -96,5 +96,33 @@ var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
 
     gMM.playbackControl.stop();    
   }
+})
+
+CmdUtils.CreateCommand({ 
+  name: "hypemachine",
+  description: "Search music blogs and upcoming concerts",
+  homepage: "http://geekshadow.com/",
+  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
+  license: "MPL/GPL/LGPL",
+  icon: "chrome://service-icons/skin/hypemachine.ico",
+  takes: {"song": noun_arb_text},
+  execute: function( searchTerm ) {
+    var url = "http://hypem.com/search/" + searchTerm.text + "/1/";
+    Utils.openUrlInBrowser( url );
+  }
+}) 
+
+CmdUtils.CreateCommand({ 
+  name: "skreemr",
+  description: "SkreemR audio search",
+  homepage: "http://geekshadow.com/",
+  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
+  license: "MPL/GPL/LGPL",
+  icon: "chrome://service-icons/skin/skreemr.ico",
+  takes: {"song": noun_arb_text},
+  execute: function( searchTerm ) {
+    var url = "http://www.skreemr.com/results.jsp?q=" + searchTerm.text;
+    Utils.openUrlInBrowser( url );
+  }
 });
 
