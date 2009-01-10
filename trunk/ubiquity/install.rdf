@@ -4,7 +4,7 @@
      xmlns:em="http://www.mozilla.org/2004/em-rdf#">
   <Description about="urn:mozilla:install-manifest">
     <em:id>ubiquity@labs.mozilla.com</em:id>
-    <em:version>0.1.4</em:version>
+    <em:version>0.1.4.20090110</em:version>
     <em:type>2</em:type>
 
     <!-- Target Application this extension can install into, 
@@ -16,12 +16,21 @@
         <em:maxVersion>3.2a1pre</em:maxVersion>
       </Description>
     </em:targetApplication>
+    
+    <!-- Songbird compatibility -->
+    <em:targetApplication>
+      <Description>
+        <em:id>songbird@songbirdnest.com</em:id>
+        <em:minVersion>1.0.0</em:minVersion>
+        <em:maxVersion>1.1.0pre</em:maxVersion>
+      </Description>
+    </em:targetApplication>      
    
     <!-- Front End MetaData -->
     <em:name>Ubiquity</em:name>
     <em:description>An extension that allows for the use of dynamic commands in Firefox.</em:description>
     <em:creator>Mozilla Corporation</em:creator>
-    <em:iconURL>chrome://ubiquity/skin/icons/ubiquity_logo.png</em:iconURL>
+    <em:iconURL>chrome://ubiquity/skin/icons/ubiquity_logo_sb.png</em:iconURL>
     <em:homepageURL>http://wiki.mozilla.org/Labs/Ubiquity</em:homepageURL>
     <em:optionsURL>chrome://ubiquity/content/preferences.xul</em:optionsURL>
   </Description>

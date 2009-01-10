@@ -226,6 +226,9 @@ CmdUtils.copyToClipboard = function copyToClipboard(text){
 }
 
 CmdUtils.log = function log(what) {
+  var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                          .getService(Components.interfaces.nsIXULAppInfo);
+
   var args = Array.prototype.slice.call(arguments);
   if(args.length == 0)
     return;
@@ -233,7 +236,12 @@ CmdUtils.log = function log(what) {
   var logPrefix = "Ubiquity: ";
   var windowManager = Cc["@mozilla.org/appshell/window-mediator;1"]
     .getService(Ci.nsIWindowMediator);
+  if(xulAppInfo.name == "Songbird"){
+  var browserWindow = windowManager.getMostRecentWindow("Songbird:Main");
+  }
+  else{
   var browserWindow = windowManager.getMostRecentWindow("navigator:browser");
+  }
 
   if("Firebug" in browserWindow && "Console" in browserWindow.Firebug) {
     args.unshift(logPrefix);

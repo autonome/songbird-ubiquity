@@ -1,7 +1,14 @@
 function reloadGoogleCalendarTabs() {
   try {
+    var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                            .getService(Components.interfaces.nsIXULAppInfo);  
     var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"].getService(Components.interfaces.nsIWindowMediator);
+    if(xulAppInfo.name == "Songbird"){
+    var enumerator = wm.getEnumerator("Songbird:Main");
+    }
+    else{
     var enumerator = wm.getEnumerator("navigator:browser");
+    }
     while(enumerator.hasMoreElements()) {
       var win = enumerator.getNext();
       var index = 0, numTabs = win.getBrowser().mPanelContainer.childNodes.length;

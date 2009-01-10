@@ -59,6 +59,10 @@ let UbiquitySetup = {
   STANDARD_FEEDS: [{page: "firefox.html",
                     source: "firefox.js",
                     title: "Mozilla Browser Commands"},
+                    
+                   {page: "songbird.html",
+                    source: "songbird.js",
+                    title: "Songbird Media Player Commands"},
 
                    {page: "social.html",
                     source: "social.js",

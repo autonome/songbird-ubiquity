@@ -190,11 +190,17 @@ CmdUtils.CreateCommand({
     aEl.innerHTML += aTagsString.text.length ? " (" + aTagsString.text + ")" : ".";
   },
   execute: function(aTagsString) {
+    var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"].getService(Components.interfaces.nsIXULAppInfo);
     var Cc = Components.classes;
     var Ci = Components.interfaces;
     var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
              getService(Ci.nsIWindowMediator);
+    if(xulAppInfo.name == "Songbird"){         
+    var recentWindow = wm.getMostRecentWindow("Songbird:Main");
+    }
+    else{
     var recentWindow = wm.getMostRecentWindow("navigator:browser");
+    }
     var doc = recentWindow.content.document;
     if (!doc)
       return;
