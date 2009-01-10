@@ -57,10 +57,18 @@ function onClick(event) {
 }
 
 function openUrl(url) {
+
+  var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                          .getService(Components.interfaces.nsIXULAppInfo);
   
   var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
            .getService(Components.interfaces.nsIWindowMediator);
+  if(xulAppInfo.name == "Songbird"){
+  var browserWindow = wm.getMostRecentWindow("Songbird:Main");
+  }
+  else{
   var browserWindow = wm.getMostRecentWindow("navigator:browser");
+  }
   var browser = browserWindow.getBrowser();
 
   if (browser.mCurrentBrowser.currentURI.spec == "about:blank")

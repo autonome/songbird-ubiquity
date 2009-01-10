@@ -31,10 +31,16 @@ function runTests() {
 
 function scheduleCheckForUbiquity() {
   function doCheck() {
+    var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+             .getService(Components.interfaces.nsIXULAppInfo);
     var wm = Cc["@mozilla.org/appshell/window-mediator;1"]
              .getService(Ci.nsIWindowMediator);
+    if(xulAppInfo.name == "Songbird"){         
+    var win = wm.getMostRecentWindow('Songbird:Main');
+    }
+    else{
     var win = wm.getMostRecentWindow('navigator:browser');
-
+    }
     if (win.gUbiquity) {
       dump('Ubiquity found.\n');
       runTests();

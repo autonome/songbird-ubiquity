@@ -164,6 +164,8 @@ Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
   // allow postData to be null/undefined, string representation, json representation, or nsIInputStream
   // nsIInputStream is what is needed
 
+      var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                               .getService(Components.interfaces.nsIXULAppInfo);
   var postInputStream = null;
   if(postData) {
     if(postData instanceof Ci.nsIInputStream) {
@@ -186,7 +188,12 @@ Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
 
   var windowManager = Cc["@mozilla.org/appshell/window-mediator;1"]
     .getService(Ci.nsIWindowMediator);
+    if(xulAppInfo.name == "Songbird"){
+  var browserWindow = windowManager.getMostRecentWindow("Songbird:Main");
+	}
+	else{  
   var browserWindow = windowManager.getMostRecentWindow("navigator:browser");
+  }
   var browser = browserWindow.getBrowser();
 
   var prefService = Cc["@mozilla.org/preferences-service;1"]

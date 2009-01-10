@@ -49,9 +49,16 @@ Utils.parseRemoteDocument = function parseRemoteDocument(remoteUrl, postParams, 
   };
 
   function parseHtml(htmlText) {
+    var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                            .getService(Components.interfaces.nsIXULAppInfo);
     var windowMediator = Cc['@mozilla.org/appshell/window-mediator;1']
       .getService(Ci.nsIWindowMediator);
+    if(xulAppInfo.name == "Songbird"){
+    var window = windowMediator.getMostRecentWindow("Songbird:Main");
+    }
+    else{
     var window = windowMediator.getMostRecentWindow("navigator:browser");
+    }
     var document = window.document;
     rootElement = document.documentElement;
     iframe = document.createElement('iframe');
