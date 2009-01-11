@@ -165,7 +165,7 @@ function makeSBSearchCommand(aProperty) {
     homepage: "http://autonome.wordpress.com/",
     author: { name: "Dietrich Ayala", email: "autonome@gmail.com"},
     license: "MPL/GPL/LGPL",
-    icon: "chrome://ubiquity/skin/icons/control_stop.png",
+    icon: "chrome://ubiquity/skin/icons/music.png",
     description: "Search for " + aProperty,
     takes: {term: context.chromeWindow[nounTypeName]},
     preview: function(pblock, term) {
