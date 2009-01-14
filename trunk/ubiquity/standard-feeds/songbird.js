@@ -1,3 +1,11 @@
+/**
+ * Play Command
+ *
+ * TODO:
+ * - currently does nothing if not already paused. should instead start
+ *   playing mainLibrary or whatever the current view is, with default
+ *   playback settings.
+ */
 CmdUtils.CreateCommand({
   name: "play",
   homepage: "http://geekshadow.com/",
@@ -7,12 +15,12 @@ CmdUtils.CreateCommand({
   description: "Play the first song in the playlist",
   execute: function() {
     
-if (typeof(Cc) == "undefined")
-    var Cc = Components.classes;
-if (typeof(Ci) == "undefined")
-    var Ci = Components.interfaces;
-var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
-                .getService(Ci.sbIMediacoreManager);
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
 
     gMM.playbackControl.play();
   }
@@ -27,12 +35,12 @@ CmdUtils.CreateCommand({
   description: "Switch to the next song",
   execute: function() {
     
-if (typeof(Cc) == "undefined")
-    var Cc = Components.classes;
-if (typeof(Ci) == "undefined")
-    var Ci = Components.interfaces;
-var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
-                .getService(Ci.sbIMediacoreManager);
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
 
     gMM.sequencer.next();  
   }
@@ -47,12 +55,12 @@ CmdUtils.CreateCommand({
   description: "Switch to the previous song",  
   execute: function() {
     
-if (typeof(Cc) == "undefined")
-    var Cc = Components.classes;
-if (typeof(Ci) == "undefined")
-    var Ci = Components.interfaces;
-var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
-                .getService(Ci.sbIMediacoreManager);
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
 
     gMM.sequencer.previous();    
   }
@@ -67,12 +75,12 @@ CmdUtils.CreateCommand({
   description: "Pause the current song",    
   execute: function() {
     
-if (typeof(Cc) == "undefined")
-    var Cc = Components.classes;
-if (typeof(Ci) == "undefined")
-    var Ci = Components.interfaces;
-var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
-                .getService(Ci.sbIMediacoreManager);
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
 
     gMM.playbackControl.pause();    
   }
@@ -87,12 +95,12 @@ CmdUtils.CreateCommand({
   description: "Stop the current song",      
   execute: function() {
     
-if (typeof(Cc) == "undefined")
-    var Cc = Components.classes;
-if (typeof(Ci) == "undefined")
-    var Ci = Components.interfaces;
-var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
-                .getService(Ci.sbIMediacoreManager);
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
 
     gMM.playbackControl.stop();    
   }
@@ -243,72 +251,72 @@ function makeSBSearchCommand(aProperty) {
  * - fileExists (for pruning missing tracks)
  */
 var includedProperties = [
-  {name: "GUID", enabled: false},
-  {name: "albumArtistName", enabled: false},
-  {name: "albumDetailImage", enabled: false},
-  {name: "albumDetailUrl", enabled: false},
+  //{name: "GUID", enabled: false},
+  //{name: "albumArtistName", enabled: false},
+  //{name: "albumDetailImage", enabled: false},
+  //{name: "albumDetailUrl", enabled: false},
   {name: "albumName", enabled: true},
-  {name: "artistDetailImage", enabled: false},
-  {name: "artistDetailUrl", enabled: false},
+  //{name: "artistDetailImage", enabled: false},
+  //{name: "artistDetailUrl", enabled: false},
   {name: "artistName", enabled: true},
-  {name: "availability", enabled: false},
+  //{name: "availability", enabled: false},
   {name: "bitRate", enabled: true},
-  {name: "bpm", enabled: false},
-  {name: "columnSpec", enabled: false},
+  //{name: "bpm", enabled: false},
+  //{name: "columnSpec", enabled: false},
   {name: "comment", enabled: true},
   {name: "composerName", enabled: true},
   {name: "conductorName", enabled: true},
-  {name: "contentLength", enabled: false},
-  {name: "contentMimeType", enabled: false},
-  {name: "contentURL", enabled: false},
-  {name: "copyright", enabled: false},
-  {name: "copyrightURL", enabled: false},
+  //{name: "contentLength", enabled: false},
+  //{name: "contentMimeType", enabled: false},
+  //{name: "contentURL", enabled: false},
+  //{name: "copyright", enabled: false},
+  //{name: "copyrightURL", enabled: false},
   {name: "created", enabled: false},
-  {name: "customType", enabled: false},
-  {name: "defaultColumnSpec", enabled: false},
-  {name: "defaultMediaPageURL", enabled: false},
-  {name: "destination", enabled: false},
-  {name: "deviceId", enabled: false},
-  {name: "disableDownload", enabled: false},
-  {name: "discNumber", enabled: false},
-  {name: "downloadButton", enabled: false},
-  {name: "downloadDetails", enabled: false},
-  {name: "downloadStatusTarget", enabled: false},
-  {name: "duration", enabled: false},
-  {name: "enableAutoDownload", enabled: false},
-  {name: "excludeFromHistory", enabled: false},
+  //{name: "customType", enabled: false},
+  //{name: "defaultColumnSpec", enabled: false},
+  //{name: "defaultMediaPageURL", enabled: false},
+  //{name: "destination", enabled: false},
+  //{name: "deviceId", enabled: false},
+  //{name: "disableDownload", enabled: false},
+  //{name: "discNumber", enabled: false},
+  //{name: "downloadButton", enabled: false},
+  //{name: "downloadDetails", enabled: false},
+  //{name: "downloadStatusTarget", enabled: false},
+  //{name: "duration", enabled: false},
+  //{name: "enableAutoDownload", enabled: false},
+  //{name: "excludeFromHistory", enabled: false},
   {name: "genre", enabled: true},
-  {name: "hash", enabled: false},
-  {name: "hidden", enabled: false},
-  {name: "isContentReadOnly", enabled: false},
-  {name: "isList", enabled: false},
-  {name: "isPartOfCompilation", enabled: false},
-  {name: "isReadOnly", enabled: false},
-  {name: "isSortable", enabled: false},
-  {name: "key", enabled: false},
-  {name: "language", enabled: false},
-  {name: "lastPlayTime", enabled: false},
-  {name: "lastSkipTime", enabled: false},
-  {name: "listType", enabled: false},
-  {name: "lyricistName", enabled: false},
-  {name: "lyrics", enabled: false},
-  {name: "mediaListName", enabled: false},
-  {name: "metadataUUID", enabled: false},
-  {name: "onlyCustomMediaPages", enabled: false},
-  {name: "ordinal", enabled: false},
-  {name: "originItemGuid", enabled: false},
-  {name: "originLibraryGuid", enabled: false},
-  {name: "originPage", enabled: false},
-  {name: "originPageImage", enabled: false},
-  {name: "originPageTitle", enabled: false},
-  {name: "originURL", enabled: false},
-  {name: "outerGUID", enabled: false},
-  {name: "playCount", enabled: false},
-  {name: "playCount_AtLastSync", enabled: false},
-  {name: "primaryImageURL", enabled: false},
-  {name: "producerName", enabled: false},
-  {name: "rapiScopeURL", enabled: false},
-  {name: "rapiSiteID", enabled: false},
+  //{name: "hash", enabled: false},
+  //{name: "hidden", enabled: false},
+  //{name: "isContentReadOnly", enabled: false},
+  //{name: "isList", enabled: false},
+  //{name: "isPartOfCompilation", enabled: false},
+  //{name: "isReadOnly", enabled: false},
+  //{name: "isSortable", enabled: false},
+  //{name: "key", enabled: false},
+  //{name: "language", enabled: false},
+  //{name: "lastPlayTime", enabled: false},
+  //{name: "lastSkipTime", enabled: false},
+  //{name: "listType", enabled: false},
+  //{name: "lyricistName", enabled: false},
+  //{name: "lyrics", enabled: false},
+  //{name: "mediaListName", enabled: false},
+  //{name: "metadataUUID", enabled: false},
+  //{name: "onlyCustomMediaPages", enabled: false},
+  //{name: "ordinal", enabled: false},
+  //{name: "originItemGuid", enabled: false},
+  //{name: "originLibraryGuid", enabled: false},
+  //{name: "originPage", enabled: false},
+  //{name: "originPageImage", enabled: false},
+  //{name: "originPageTitle", enabled: false},
+  //{name: "originURL", enabled: false},
+  //{name: "outerGUID", enabled: false},
+  //{name: "playCount", enabled: false},
+  //{name: "playCount_AtLastSync", enabled: false},
+  //{name: "primaryImageURL", enabled: false},
+  //{name: "producerName", enabled: false},
+  //{name: "rapiScopeURL", enabled: false},
+  //{name: "rapiSiteID", enabled: false},
   {name: "rating", enabled: true, typeHint: "number 1 - 5",
     comparisonFunc: function(aValue) {
       // there's only five values for rating (1-5), so we just
@@ -317,19 +325,19 @@ var includedProperties = [
     }
   },
   {name: "recordLabelName", enabled: true},
-  {name: "sampleRate", enabled: false},
-  {name: "skipCount", enabled: false},
-  {name: "skipCount_AtLastSync", enabled: false},
-  {name: "smartMediaListState", enabled: false},
-  {name: "softwareVendor", enabled: false},
-  {name: "storageGUID", enabled: false},
-  {name: "subtitle", enabled: false},
-  {name: "totalDiscs", enabled: false},
-  {name: "totalTracks", enabled: false},
-  {name: "trackName", enabled: true},
-  {name: "trackNumber", enabled: false},
-  {name: "transferPolicy", enabled: false},
-  {name: "updated", enabled: false},
+  //{name: "sampleRate", enabled: false},
+  //{name: "skipCount", enabled: false},
+  //{name: "skipCount_AtLastSync", enabled: false},
+  //{name: "smartMediaListState", enabled: false},
+  //{name: "softwareVendor", enabled: false},
+  //{name: "storageGUID", enabled: false},
+  //{name: "subtitle", enabled: false},
+  //{name: "totalDiscs", enabled: false},
+  //{name: "totalTracks", enabled: false},
+  //{name: "trackName", enabled: true},
+  //{name: "trackNumber", enabled: false},
+  //{name: "transferPolicy", enabled: false},
+  //{name: "updated", enabled: false},
   {name: "year", enabled: true},
 ];
 
@@ -340,3 +348,4 @@ for (var i = 0; i < includedProperties.length; i++) {
     makeSBSearchCommand(prop);
   }
 }
+
