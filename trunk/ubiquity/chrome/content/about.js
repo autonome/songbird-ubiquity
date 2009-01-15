@@ -36,11 +36,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-Components.utils.import("resource://ubiquity-modules/setup.js");
-
-// TODO: this is also defined in linkrel_codesvc.js - it should only be defined in one place!
-const CONFIRM_URL = "chrome://ubiquity/content/confirm-add-command.html";
-
+Components.utils.import("resource://ubiquity/modules/setup.js");
 
 function makeRemover(element, info) {
   function onSlideDown() {
@@ -86,24 +82,6 @@ function makeUnremover(element, info) {
   return unremove;
 }
 
-function checkForManualUpdate(info, elem) {
-  function onSuccess(data) {
-    if (data != info.getCode()) {
-      var confirmUrl = (CONFIRM_URL + "?url=" +
-                        encodeURIComponent(info.htmlUri.spec) + "&sourceUrl=" +
-                        encodeURIComponent(info.jsUri.spec) + "&updateCode=" +
-                        encodeURIComponent(data));
-
-      $(elem).after('<br><a class="feed-updated" href="' + confirmUrl +
-                    '">An update for this feed is available.</a>');
-    }
-  }
-
-  jQuery.ajax({url: info.jsUri.spec,
-               dataType: "text",
-               success: onSuccess});
-}
-
 function makeFeedListElement(info, label, clickMaker) {
   var li = document.createElement("li");
 
@@ -117,33 +95,21 @@ function makeFeedListElement(info, label, clickMaker) {
     return linkToHtml;
   }
 
-  var titleLink = addLink(info.title, info.htmlUri.spec);
+  var titleLink = addLink(info.title, info.uri.spec);
 
-  var createCommands = /CmdUtils.CreateCommand\(\{\s*name:\s*"([^"]*)"/mg;
-  var stdCommands    = /function cmd_([^(]*)/g;
-  var stdCommandsAlt = /cmd_([^(.]*)\s+=\s+function\(/g;
-  var names = [];
-  var result;
-  var code = info.getCode();
-  var parser = new JSParser(code);
-  code = parser.clean();
-  var commandList = document.createElement("ul");
-  while (((result = createCommands.exec(code)) != null) ||
-         ((result = stdCommands(code)) != null) ||
-         ((result = stdCommandsAlt(code)) != null)) {
-    if (names.indexOf(result[1]) == -1) {
-      var command = document.createElement("li");
-      command.appendChild(document.createTextNode(result[1].replace(/_/g,"-")));
-      commandList.appendChild(command);
-      names.push(result[1]);
-    }
+  if (label == "unsubscribe" && !info.canAutoUpdate) {
+    info.checkForManualUpdate(
+      function(isAvailable, href) {
+        if (isAvailable)
+          $(titleLink).after('<br><a class="feed-updated" href="' + href +
+                             '">An update for this feed is available.</a>');
+      });
   }
-  $(li).append(commandList);
 
-  // TODO: This is confusing to read b/c info.canUpdate should
-  // really be called 'info.canAutoUpdate'.
-  if (label == "unsubscribe" && !info.canUpdate)
-    checkForManualUpdate(info, titleLink);
+  var commandList = $("<ul></ul>");
+  for (name in info.commands)
+    $(commandList).append($("<li></li>").text(name));
+  $(li).append(commandList);
 
   var linkToAction = document.createElement("span");
   $(linkToAction).text("[" + label + "]");
@@ -154,37 +120,41 @@ function makeFeedListElement(info, label, clickMaker) {
   var sourceUrl;
   var sourceName;
 
-  if (info.canUpdate) {
-    sourceUrl = info.jsUri.spec;
+  if (info.canAutoUpdate)
     sourceName = "auto-updated source";
-  } else {
-    sourceUrl = "data:application/x-javascript," + escape(info.getCode());
+  else
     sourceName = "source";
-  }
 
   $(li).append(" ");
-  addLink("[view " + sourceName + "]", sourceUrl, "feed-action");
+  addLink("[view " + sourceName + "]", info.viewSourceUri.spec,
+          "feed-action");
 
   return li;
 }
 
 function onReady() {
+  $("#docs").attr("href", UbiquitySetup.getBaseUri() + "index.html");
   PrefKeys.onLoad();
+  let feedMgr = UbiquitySetup.createServices().feedManager;
 
-  let linkRelCodeSvc = UbiquitySetup.createServices().linkRelCodeService;
-  let markedPages = linkRelCodeSvc.getMarkedPages();
-  for (let i = 0; i < markedPages.length; i++)
-    $("#command-feeds").append(makeFeedListElement(markedPages[i],
-                                                   "unsubscribe",
-                                                   makeRemover));
+  function addSubscribedFeed(feed) {
+    if (!feed.isBuiltIn)
+      $("#command-feeds").append(makeFeedListElement(feed,
+                                                     "unsubscribe",
+                                                     makeRemover));
+  }
+  feedMgr.getSubscribedFeeds().forEach(addSubscribedFeed);
+
   if (!$("#command-feeds").text())
     $("#command-feeds-div").hide();
 
-  let removedPages = linkRelCodeSvc.getRemovedPages();
-  for (i = 0; i < removedPages.length; i++)
-    $("#command-feed-graveyard").append(makeFeedListElement(removedPages[i],
+  function addUnsubscribedFeed(feed) {
+    $("#command-feed-graveyard").append(makeFeedListElement(feed,
                                                             "resubscribe",
                                                             makeUnremover));
+  }
+  feedMgr.getUnsubscribedFeeds().forEach(addUnsubscribedFeed);
+
   if (!$("#command-feed-graveyard").text())
     $("#command-feed-graveyard-div").hide();
 

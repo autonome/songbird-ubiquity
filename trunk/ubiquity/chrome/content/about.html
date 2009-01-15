@@ -9,9 +9,9 @@
   <link rel="shortcut icon" href="chrome://ubiquity/skin/icons/favicon.ico" type="image/x-icon" />
   <script type="text/javascript" src="prefkeys.js"></script>
   <script type="text/javascript" 
-          src="resource://ubiquity-scripts/jsparser.js"></script>
+          src="resource://ubiquity/scripts/jsparser.js"></script>
   <script type="text/javascript"
-          src="resource://ubiquity-scripts/jquery.js"></script>
+          src="resource://ubiquity/scripts/jquery.js"></script>
   
   <title>About Ubiquity</title>
 </head>
@@ -57,10 +57,25 @@
   <p><strong>Help us</strong>. Subscribe to the <a href="https://ubiquity.mozilla.com/herd/command-feed/">Herd</a>, which will add your data to the <a href="https://ubiquity.mozilla.com/herd">dashboard</a></a>&mdash;it's completely anonymous and will help us make Ubiquity better and safer.</p>
     
 
-  
+  <h2>Troubleshooting Ubiquity</h2>
+
+  <p>Due to Ubiquity's unusual nature as a Labs experiment, you may
+  run into problems while using it.  If Ubiquity becomes completely
+  unresponsive to you, then it may be necessary to reset it to its
+  "factory defaults" in order to use it again.  To do this, click <a
+  href="reset.html">here</a>&mdash;and our apologies for the
+  inconvenience!</p>
+
   <h2>Developing Ubiquity</h2>
-  <p><strong>Learn</strong> how to develop for Ubiquity by reading the <a href="https://wiki.mozilla.org/Labs/Ubiquity/Ubiquity_0.1_Author_Tutorial">command author tutorial</a>.</p>
   
+  <p style="background-color: #F2E78B; padding:8px;">
+  <strong>New</strong>: read the documentation for the <strong><a id="docs">command APIs</a></strong>.
+  </p>
+  
+  <p>
+  <strong>Learn</strong> how to develop for Ubiquity by reading the <a href="https://wiki.mozilla.org/Labs/Ubiquity/Ubiquity_0.1_Author_Tutorial">command author tutorial</a>.
+  </p>
+    
   <p>Use the <a href="editor.html">command editor</a> to play around
   with <strong>creating new</strong> Ubiquity commands.  This isn't just a fun way to
   experiment with Ubiquity&mdash;it's actually a really easy way to
@@ -93,21 +108,12 @@
 
 
 <div class="col-four">
-  <h2 class="top">Ubiquity 0.1.3 Released!</h2>
+  <h2 class="top">Thanks for trying out Ubiquity 0.1.5!</h2>
 
-  <p>Ubiquity 0.1.3 brings a range of new features to the board:</p>
+  <p>Read the Ubiquity <a href="https://wiki.mozilla.org/Labs/Ubiquity/Ubiquity_0.1.5_Release_Notes">0.1.5 Release Notes</a> for information on exactly what changed.</p>
 
-  <ul>
-    <li><b>New Look</b>: Ubiquity has a new, simpler look.</li>
-    <li><b>Skins</b>: Anyone can now give Ubiquity a new look. It's as simple as a <a href="https://wiki.mozilla.org/Labs/Ubiquity/Skins/">little bit of CSS</a>. Once you've created a skin, it's easy to <a href="https://wiki.mozilla.org/Labs/Ubiquity/Skins/#Sharing">share it</a> with the world: you can subscribe to skins just like you can subscribe to commands.</li>
-    <li><b>Speed</b>: Ubiquity is now much more snappy.</li>
-    <li><b>Relevancy</b>: Ubiquity makes it easier to issue the command you want, and the context menu is working again.</li>
- </ul>
-
- <p>If you're wondering where your old command feed subscriptions went, check out our handy <a href="chrome://ubiquity/content/annotation_migration.html">Command Feed Migration page</a>. Sorry for the inconvenience!</p>
- 
- <p>Want to know more about what's changed? Read the <a href="https://wiki.mozilla.org/Labs/Ubiquity/Ubiquity_0.1.3_Release_Notes">release notes</a>.</p>
-
+  <p>For information about the goals of the upcoming 0.2 release of Ubiquity, check out our <a href="https://wiki.mozilla.org/Labs/Ubiquity/0.2_Design:_UI_and_Security_Extensibility">design document</a>. It has diagrams!</p>
+  <!--<p>Also, check out our <a href="locked-down-feed-plugin/example.html">example Locked-Down Feed Plugin command feed</a>.  This feed is executed in a super-restricted sandbox so that it can't do anything harmful to your computer.</p>-->
   <p> Ubiquity is a team effort by contributors from all over the world. For a list of some of the contributors, check out the <a href="https://wiki.mozilla.org/Labs/Ubiquity/Credits">credits</a> page.
 
   <h2 class="top">Introduction Movie</h2>

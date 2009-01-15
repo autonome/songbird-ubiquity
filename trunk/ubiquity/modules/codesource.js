@@ -35,22 +35,25 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-EXPORTED_SYMBOLS = ["MixedCodeSourceCollection",
+EXPORTED_SYMBOLS = ["MixedCodeSource",
                     "StringCodeSource",
                     "RemoteUriCodeSource",
                     "LocalUriCodeSource",
                     "XhtmlCodeSource"];
 
-Components.utils.import("resource://ubiquity-modules/utils.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
 
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 
-function MixedCodeSourceCollection(headerSources,
-                                   bodySources,
-                                   footerSources) {
-  this.__iterator__ = function MCSC_iterator() {
+function MixedCodeSource(bodySource,
+                         headerSources,
+                         footerSources) {
+  this.id = bodySource.id;
+
+  this.getCode = function getCode() {
     let code;
+    let codeSections = [];
     let headerCode = '';
     let headerCodeSections = [];
 
@@ -72,21 +75,21 @@ function MixedCodeSourceCollection(headerSources,
                                lineNumber: 1});
     }
 
-    for (bodyCs in bodySources) {
-      code = bodyCs.getCode();
-      let codeSections = [];
-      codeSections = codeSections.concat(headerCodeSections);
-      if (bodyCs.codeSections)
-        codeSections = codeSections.concat(bodyCs.codeSections);
-      else
-        codeSections.push({length: code.length,
-                           filename: bodyCs.id,
-                           lineNumber: 1});
-      codeSections = codeSections.concat(footerCodeSections);
-      let code = headerCode + code + footerCode;
-      yield new StringCodeSource(code, bodyCs.id, bodyCs.dom,
-                                 codeSections);
-    }
+    code = bodySource.getCode();
+    codeSections = codeSections.concat(headerCodeSections);
+    if (bodySource.codeSections)
+      codeSections = codeSections.concat(bodySource.codeSections);
+    else
+      codeSections.push({length: code.length,
+                         filename: bodySource.id,
+                         lineNumber: 1});
+    codeSections = codeSections.concat(footerCodeSections);
+    code = headerCode + code + footerCode;
+
+    this.codeSections = codeSections;
+    this.dom = bodySource.dom;
+
+    return code;
   };
 }
 
@@ -103,9 +106,9 @@ StringCodeSource.prototype = {
   }
 };
 
-function RemoteUriCodeSource(pageInfo) {
-  this.id = pageInfo.jsUri.spec;
-  this._pageInfo = pageInfo;
+function RemoteUriCodeSource(feedInfo) {
+  this.id = feedInfo.srcUri.spec;
+  this._feedInfo = feedInfo;
   this._req = null;
   this._hasCheckedRecently = false;
 };
@@ -126,14 +129,14 @@ RemoteUriCodeSource.prototype = {
       var self = this;
       self._req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
                   .createInstance(Ci.nsIXMLHttpRequest);
-      self._req.open('GET', this._pageInfo.jsUri.spec, true);
+      self._req.open('GET', this._feedInfo.srcUri.spec, true);
       self._req.overrideMimeType("text/plain");
 
       self._req.onreadystatechange = function RUCS__onXhrChange() {
         if (self._req.readyState == 4) {
           if (self._req.status == 200)
             // Update our cache.
-            self._pageInfo.setCode(self._req.responseText);
+            self._feedInfo.setCode(self._req.responseText);
           self._req = null;
           Utils.setTimeout(
             function() { self._hasCheckedRecently = false; },
@@ -147,7 +150,7 @@ RemoteUriCodeSource.prototype = {
     }
 
     // Return whatever we've got cached for now.
-    return this._pageInfo.getCode();
+    return this._feedInfo.getCode();
   }
 };
 
@@ -162,36 +165,44 @@ LocalUriCodeSource.isValidUri = function LUCS_isValidUri(uri) {
   uri = Utils.url(uri);
   return (uri.scheme == "file" ||
           uri.scheme == "chrome" ||
-          uri.scheme == "resource");
+          uri.scheme == "resource" ||
+          uri.scheme == "ubiquity");
 };
 
 LocalUriCodeSource.prototype = {
   getCode : function LUCS_getCode() {
     try {
-      var file = Utils.url(this.uri)
-                 .QueryInterface(Components.interfaces.nsIFileURL).file;
+      var url = Utils.url(this.uri);
+      if (url.scheme == "file") {
+        var file = url.QueryInterface(Components.interfaces.nsIFileURL).file;
+        if (file.exists()) {
+          var lastModifiedTime = file.lastModifiedTime;
 
-      var lastModifiedTime = file.lastModifiedTime;
-      if (this._cached && this._cachedTimestamp == lastModifiedTime)
-        return this._cached;
+          if (this._cached && this._cachedTimestamp == lastModifiedTime)
+            return this._cached;
 
-      this._cachedTimestamp = lastModifiedTime;
+          this._cachedTimestamp = lastModifiedTime;
+        }
+        else
+          return "";
+      }
 
       var req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
                 .createInstance(Ci.nsIXMLHttpRequest);
       req.open('GET', this.uri, false);
       req.overrideMimeType("text/javascript");
       req.send(null);
-      /* TODO if you have a bookmark to a local file, and the expected file
-         isn't there, this will throw an exception that takes Ubiquity down
-         with it. */
+
       if (req.status == 0) {
+        if (req.responseText.indexOf("ERROR:") == 0)
+          throw new Error(req.responseText);
         this._cached = req.responseText;
         return this._cached;
       } else
-        // TODO: Throw an exception or display a message.
-        return "";
-    } catch(ex) {
+        throw new Error("XHR returned status " + req.status);
+    } catch (e) {
+      Components.utils.reportError("Retrieving " + this.uri +
+                                   " raised exception " + e);
       return "";
     }
   }
@@ -234,7 +245,7 @@ function XhtmlCodeSource(codeSource) {
       codeSections = [];
       var newCode = "";
       var xmlparser = {};
-      Components.utils.import("resource://ubiquity-modules/xml_script_commands_parser.js", xmlparser);
+      Components.utils.import("resource://ubiquity/modules/xml_script_commands_parser.js", xmlparser);
       var info = xmlparser.parseCodeFromXml(code);
       for (var i = 0; i < info.length; i++) {
         newCode += info[i].code;

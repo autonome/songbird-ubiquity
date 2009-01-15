@@ -1,6 +1,6 @@
-Components.utils.import("resource://ubiquity-modules/utils.js");
-Components.utils.import("resource://ubiquity-modules/prefcommands.js");
-Components.utils.import("resource://ubiquity-modules/setup.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
+Components.utils.import("resource://ubiquity/modules/prefcommands.js");
+Components.utils.import("resource://ubiquity/modules/setup.js");
 
 var Editor = {
 
@@ -9,6 +9,7 @@ var Editor = {
   onLoad : function(){
     var editor = Application.prefs.getValue(this.EDITOR_PREF, null);
     $("#editorInputBox").val(editor);
+    $("#docs").attr("href", UbiquitySetup.getBaseUri() + "index.html");
   },
   onSave : function(){
     Application.prefs.setValue(this.EDITOR_PREF, $("#editorInputBox").val());
@@ -162,10 +163,11 @@ function saveAs() {
 
       saveTextToFile(editor.editor.editor.getCode(), fp.file);
 
-      let linkRelCodeSvc = UbiquitySetup.createServices().linkRelCodeService;
-      linkRelCodeSvc.addMarkedPage({url: fp.fileURL.spec,
-                                    sourceCode: "",
-                                    canUpdate: true});
+      let feedMgr = UbiquitySetup.createServices().feedManager;
+      feedMgr.addSubscribedFeed({url: fp.fileURL.spec,
+                                        sourceUrl: fp.fileURL.spec,
+                                        sourceCode: "",
+                                        canAutoUpdate: true});
 
       editor.editor.setCode("");
       PrefCommands.setCode("");

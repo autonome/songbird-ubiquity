@@ -38,15 +38,13 @@
 
 EXPORTED_SYMBOLS = ["UbiquitySetup"];
 
-Components.utils.import("resource://ubiquity-modules/utils.js");
-Components.utils.import("resource://ubiquity-modules/sandboxfactory.js");
-Components.utils.import("resource://ubiquity-modules/msgservice.js");
-Components.utils.import("resource://ubiquity-modules/linkrel_codesvc.js");
-Components.utils.import("resource://ubiquity-modules/codesource.js");
-Components.utils.import("resource://ubiquity-modules/prefcommands.js");
-Components.utils.import("resource://ubiquity-modules/collection.js");
-Components.utils.import("resource://ubiquity-modules/cmdsource.js");
-Components.utils.import("resource://ubiquity-modules/annotation_memory.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
+Components.utils.import("resource://ubiquity/modules/msgservice.js");
+Components.utils.import("resource://ubiquity/modules/feedmanager.js");
+Components.utils.import("resource://ubiquity/modules/default_feed_plugin.js");
+Components.utils.import("resource://ubiquity/modules/locked_down_feed_plugin.js");
+Components.utils.import("resource://ubiquity/modules/annotation_memory.js");
+Components.utils.import("resource://ubiquity/modules/feedaggregator.js");
 
 let Application = Components.classes["@mozilla.org/fuel/application;1"]
                   .getService(Components.interfaces.fuelIApplication);
@@ -55,7 +53,13 @@ let gServices;
 
 let gIframe;
 
+const RESET_SCHEDULED_PREF = "extensions.ubiquity.isResetScheduled";
+const VERSION_PREF ="extensions.ubiquity.lastversion";
+const ANN_DB_FILENAME = "ubiquity_ann.sqlite";
+
 let UbiquitySetup = {
+  isNewlyInstalledOrUpgraded: false,
+
   STANDARD_FEEDS: [{page: "firefox.html",
                     source: "firefox.js",
                     title: "Mozilla Browser Commands"},
@@ -110,6 +114,54 @@ let UbiquitySetup = {
     return extDir;
   },
 
+  __modifyUserAgent: function __modifyUserAgent() {
+    const USERAGENT_PREF = "general.useragent.extra.ubiquity";
+    var expectedPref = "Ubiquity/" + this.version;
+    Application.prefs.setValue(USERAGENT_PREF, expectedPref);
+
+    function removePref() {
+      Application.prefs.setValue(USERAGENT_PREF, "");
+    }
+
+    Application.events.addListener("quit", {handleEvent: removePref});
+  },
+
+  __maybeReset: function __maybeReset() {
+    if (this.isResetScheduled) {
+      // Reset all feed subscriptions.
+      let annDb = AnnotationService.getProfileFile(ANN_DB_FILENAME);
+      if (annDb.exists())
+        annDb.remove(false);
+
+      // Reset all skins.
+      let jsm = {};
+      Components.utils.import("resource://ubiquity/modules/skinsvc.js",
+                              jsm);
+      jsm.SkinSvc.reset();
+
+      // We'll reset the preferences for our extension here.  Unfortunately,
+      // there doesn't seem to be an easy way to get this from FUEL, so
+      // we'll have to use XPCOM directly.
+      var prefs = Components.classes["@mozilla.org/preferences-service;1"]
+                            .getService(Components.interfaces.nsIPrefService);
+      prefs = prefs.getBranch("extensions.ubiquity.");
+
+      // Ideally we'd call prefs.resetBranch() here, but according to MDC
+      // the function isn't implemented yet, so we'll have to do it
+      // manually.
+      var children = prefs.getChildList("", {});
+      children.forEach(
+        function(name) {
+          if (prefs.prefHasUserValue(name))
+            prefs.clearUserPref(name);
+        });
+
+      // This is likely redundant since we just reset all prefs, but we'll
+      // do it for completeness...
+      this.isResetScheduled = false;
+    }
+  },
+
   getBaseUri: function getBaseUri() {
     let ioSvc = Components.classes["@mozilla.org/network/io-service;1"]
                 .getService(Components.interfaces.nsIIOService);
@@ -136,6 +188,8 @@ let UbiquitySetup = {
       return;
     }
 
+    this.__maybeReset();
+
     var Cc = Components.classes;
     var Ci = Components.interfaces;
     var hiddenWindow = Cc["@mozilla.org/appshell/appShellService;1"]
@@ -156,48 +210,71 @@ let UbiquitySetup = {
     hiddenWindow.document.documentElement.appendChild(gIframe);
   },
 
+  get isResetScheduled() {
+    return Application.prefs.getValue(RESET_SCHEDULED_PREF, false);
+  },
+
+  set isResetScheduled(value) {
+    Application.prefs.setValue(RESET_SCHEDULED_PREF, value);
+  },
+
   createServices: function createServices() {
     if (!gServices) {
+      // Compare the version in our preferences from our version in the
+      // install.rdf.
+      var currVersion = Application.prefs.getValue(VERSION_PREF, "firstrun");
+      if (currVersion != this.version) {
+        Application.prefs.setValue(VERSION_PREF, this.version);
+        this.isNewlyInstalledOrUpgraded = true;
+      }
+
+      this.__modifyUserAgent();
+
       var Cc = Components.classes;
 
-      var annDbFile = AnnotationService.getProfileFile("ubiquity_ann.sqlite");
+      var annDbFile = AnnotationService.getProfileFile(ANN_DB_FILENAME);
       var annDbConn = AnnotationService.openDatabase(annDbFile);
       var annSvc = new AnnotationService(annDbConn);
 
-      var linkRelCodeService = new LinkRelCodeService(annSvc);
+      var feedManager = new FeedManager(annSvc);
       var msgService = new CompositeMessageService();
 
       msgService.add(new AlertMessageService());
       msgService.add(new ErrorConsoleMessageService());
 
-      var makeGlobals = makeBuiltinGlobalsMaker(msgService);
-      var sandboxFactory = new SandboxFactory(makeGlobals);
-      var codeSources = makeBuiltinCodeSources(this.languageCode,
-                                               linkRelCodeService);
-
       var disabledStorage = new DisabledCmdStorage(
         'extensions.ubiquity.disabledCommands'
       );
 
-      var cmdSource = new CommandSource(
-        codeSources,
+      var defaultFeedPlugin = new DefaultFeedPlugin(feedManager,
+                                                    msgService,
+                                                    gIframe.contentWindow,
+                                                    this.languageCode,
+                                                    this.getBaseUri());
+
+      var ldfPlugin = new LockedDownFeedPlugin(feedManager,
+                                               msgService,
+                                               gIframe.contentWindow);
+
+      var cmdSource = new FeedAggregator(
+        feedManager,
         msgService,
-        sandboxFactory,
         disabledStorage.getDisabledCommands()
       );
-
       disabledStorage.attach(cmdSource);
 
       gServices = {commandSource: cmdSource,
-                   linkRelCodeService: linkRelCodeService,
+                   feedManager: feedManager,
                    messageService: msgService};
 
-      // For some reason, the following function isn't executed
-      // atomically by Javascript; perhaps something being called is
-      // getting the '@mozilla.org/thread-manager;1' service and
-      // spinning via a call to processNextEvent() until some kind of
-      // I/O is finished?
-      this.__installDefaults(linkRelCodeService);
+      if (this.isNewlyInstalledOrUpgraded)
+        // For some reason, the following function isn't executed
+        // atomically by Javascript; perhaps something being called is
+        // getting the '@mozilla.org/thread-manager;1' service and
+        // spinning via a call to processNextEvent() until some kind of
+        // I/O is finished?
+        this.__installDefaults(defaultFeedPlugin);
+
       cmdSource.refresh();
     }
 
@@ -205,7 +282,7 @@ let UbiquitySetup = {
   },
 
   setupWindow: function setupWindow(window) {
-    gServices.linkRelCodeService.installToWindow(window);
+    gServices.feedManager.installToWindow(window);
 
     var PAGE_LOAD_PREF = "extensions.ubiquity.enablePageLoadHandlers";
 
@@ -248,7 +325,7 @@ let UbiquitySetup = {
     return Application.extensions.get("ubiquity@labs.mozilla.com").version;
   },
 
-  __installDefaults: function installDefaults(linkRelCodeService) {
+  __installDefaults: function installDefaults(defaultFeedPlugin) {
     let baseLocalUri = this.getBaseUri() + "standard-feeds/";
     let baseUri;
 
@@ -258,100 +335,11 @@ let UbiquitySetup = {
     } else
       baseUri = baseLocalUri;
 
-    linkRelCodeService.installDefaults(baseUri,
-                                       baseLocalUri,
-                                       this.STANDARD_FEEDS);
+    defaultFeedPlugin.installDefaults(baseUri,
+                                      baseLocalUri,
+                                      this.STANDARD_FEEDS);
   }
 };
-
-function makeBuiltinGlobalsMaker(msgService) {
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
-  var hiddenWindow = gIframe.contentWindow;
-
-  var uris = ["resource://ubiquity-scripts/jquery.js",
-              "resource://ubiquity-scripts/template.js"];
-
-  for (var i = 0; i < uris.length; i++) {
-    hiddenWindow.Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-                .getService(Components.interfaces.mozIJSSubScriptLoader)
-                .loadSubScript(uris[i]);
-  }
-
-  var globalObjects = {};
-
-  function makeGlobals(codeSource) {
-    var id = codeSource.id;
-
-    if (!(id in globalObjects))
-      globalObjects[id] = {};
-
-    return {
-      XPathResult: hiddenWindow.XPathResult,
-      XMLHttpRequest: hiddenWindow.XMLHttpRequest,
-      jQuery: hiddenWindow.jQuery,
-      Template: hiddenWindow.TrimPath,
-      Application: Application,
-      Components: Components,
-      feed: {id: codeSource.id,
-             dom: codeSource.dom},
-      pageLoadFuncs: [],
-      globals: globalObjects[id],
-      displayMessage: function() {
-        msgService.displayMessage.apply(msgService, arguments);
-      }
-    };
-  }
-
-  return makeGlobals;
-}
-
-function makeBuiltinCodeSources(languageCode, linkRelCodeService) {
-  var baseUri = UbiquitySetup.getBaseUri();
-  var basePartsUri = baseUri + "feed-parts/";
-  var baseScriptsUri = baseUri + "scripts/";
-
-  var headerCodeSources = [
-    new LocalUriCodeSource(basePartsUri + "header/utils.js"),
-    new LocalUriCodeSource(basePartsUri + "header/cmdutils.js"),
-    new LocalUriCodeSource(basePartsUri + "header/deprecated.js")
-  ];
-  var bodyCodeSources = [
-    new LocalUriCodeSource(basePartsUri + "body/onstartup.js"),
-    new XhtmlCodeSource(PrefCommands)
-  ];
-  var footerCodeSources = [
-    new LocalUriCodeSource(basePartsUri + "footer/final.js")
-  ];
-
-  if (languageCode == "jp") {
-    headerCodeSources = headerCodeSources.concat([
-      new LocalUriCodeSource(basePartsUri + "header/jp/nountypes.js")
-    ]);
-    bodyCodeSources = bodyCodeSources.concat([
-      new LocalUriCodeSource(basePartsUri + "body/jp/builtincmds.js")
-    ]);
-  } else if (languageCode == "en") {
-    headerCodeSources = headerCodeSources.concat([
-      new LocalUriCodeSource(baseScriptsUri + "date.js"),
-      new LocalUriCodeSource(basePartsUri + "header/en/nountypes.js")
-    ]);
-    bodyCodeSources = bodyCodeSources.concat([
-      new LocalUriCodeSource(basePartsUri + "body/en/builtincmds.js")
-    ]);
-  }
-
-  bodyCodeSources = new CompositeCollection([
-    new IterableCollection(bodyCodeSources),
-    linkRelCodeService
-  ]);
-
-  return new MixedCodeSourceCollection(
-    new IterableCollection(headerCodeSources),
-    bodyCodeSources,
-    new IterableCollection(footerCodeSources)
-  );
-}
 
 function DisabledCmdStorage(prefName) {
   let str = Application.prefs.getValue(prefName, '{}');

@@ -82,3 +82,72 @@ ContextUtils.getSelection = function getSelection(context) {
   }
   return retval;
 };
+
+ContextUtils.setSelection = function setSelection(context,
+                                                  content,
+                                                  options) {
+  /* content can be text or html.
+   * options is a dictionary; if it has a "text" property then
+   * that value will be used in place of the html if we're in
+   * a plain-text only editable field.
+   */
+  var doc = context.focusedWindow.document;
+  var focused = context.focusedElement;
+
+  if (doc.designMode == "on") {
+    doc.execCommand("insertHTML", false, content);
+  }
+
+  else if( focused ) {
+    var plainText = null;
+
+    if (options && options.text){
+      plainText = options.text;
+    }
+
+    if (plainText == null) {
+      // Rollin' in tha hack-illac: 1.9.0 wants html elements
+      // namespaced, whereas 1.9.1+ doesn't.
+      // 3.1.*
+      var el = doc.createElement( "html" );
+      el.innerHTML = "<div>" + content + "</div>";
+      plainText = el.textContent;
+      if (!plainText.length) {
+        // 3.0.*
+        el = doc.createElementNS("http://www.w3.org/1999/xhtml", "html" );
+        el.innerHTML = "<div>" + content + "</div>";
+        plainText = el.textContent;
+      }
+    }
+
+    var selectionEnd = focused.selectionStart + plainText.length;
+    var currentValue = focused.value;
+
+    var beforeText = currentValue.substring(0, focused.selectionStart);
+    var afterText = currentValue.substring(focused.selectionEnd,
+                                           currentValue.length);
+
+    var scrollTop = focused.scrollTop;
+    var scrollLeft = focused.scrollLeft;
+
+    focused.value = beforeText + plainText + afterText;
+    focused.focus();
+
+    //put the cursor after the inserted text
+    focused.setSelectionRange(selectionEnd, selectionEnd);
+
+    focused.scrollTop = scrollTop;
+    focused.scrollLeft = scrollLeft;
+  }
+
+  else {
+    var sel = context.focusedWindow.getSelection();
+
+    if (sel.rangeCount >= 1) {
+      var range = sel.getRangeAt(0);
+      var newNode = doc.createElement("span");
+      range.surroundContents(newNode);
+      newNode.innerHTML = content;
+    }
+  }
+};
