@@ -156,7 +156,7 @@ function makeSBPropertyNounType(aProperty) {
       var values = list.getDistinctValuesForProperty(SBProperties[propertyName]);
       while (values.hasMore() && suggestions.length < 5) {
         var value = values.getNext();
-        if ((aProperty.comparisonFunc && aProperty.comparisonFunc(value)) ||
+        if ((aProperty.comparisonFunc && aProperty.comparisonFunc(text, value)) ||
             value.toLowerCase().indexOf(text.toLowerCase()) > -1) {
           var sugg = CmdUtils.makeSugg(value, value, value);
           suggestions.push(sugg);
@@ -318,10 +318,12 @@ var includedProperties = [
   //{name: "rapiScopeURL", enabled: false},
   //{name: "rapiSiteID", enabled: false},
   {name: "rating", enabled: true, typeHint: "number 1 - 5",
-    comparisonFunc: function(aValue) {
-      // there's only five values for rating (1-5), so we just
-      // return them all as suggestions
-      return true;
+    comparisonFunc: function(aSearchText, aSuggestionValue) {
+      // This makes it so that a user can just type a rating value
+      // and "rating {val}" will be suggested.
+      if (aSearchText in [1, 2, 3, 4, 5] &&
+          aSearchText == aSuggestionValue)
+        return true;
     }
   },
   {name: "recordLabelName", enabled: true},
