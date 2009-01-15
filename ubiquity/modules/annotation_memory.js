@@ -139,9 +139,13 @@ function AnnotationService(connection) {
     return false;
   };
 
-  self.getPageAnnotation = function(uri, name) {
-    if (!self.pageHasAnnotation(uri, name))
-      throw Error('No such annotation');
+  self.getPageAnnotation = function(uri, name, defaultValue) {
+    if (!self.pageHasAnnotation(uri, name)) {
+      if (typeof(defaultValue) == 'undefined')
+        throw Error('No such annotation');
+      else
+        return defaultValue;
+    }
     return ann[uri.spec][name];
   };
 
@@ -156,16 +160,19 @@ function AnnotationService(connection) {
       // Only write out to the database if our actual contents have
       // changed.
       ann[uri.spec][name] = value;
-      let insertSql = ("INSERT OR REPLACE INTO ubiquity_annotation_memory " +
-                       "VALUES (?1, ?2, ?3)");
-      var insStmt = connection.createStatement(insertSql);
-      try {
-        insStmt.bindUTF8StringParameter(0, uri.spec);
-        insStmt.bindUTF8StringParameter(1, name);
-        insStmt.bindUTF8StringParameter(2, value);
-        insStmt.execute();
-      } finally {
-        insStmt.finalize();
+
+      if (expiration != self.EXPIRE_SESSION) {
+        let insertSql = ("INSERT OR REPLACE INTO ubiquity_annotation_memory " +
+                         "VALUES (?1, ?2, ?3)");
+        var insStmt = connection.createStatement(insertSql);
+        try {
+          insStmt.bindUTF8StringParameter(0, uri.spec);
+          insStmt.bindUTF8StringParameter(1, name);
+          insStmt.bindUTF8StringParameter(2, value);
+          insStmt.execute();
+        } finally {
+          insStmt.finalize();
+        }
       }
     }
     observers.forEach(
@@ -195,6 +202,7 @@ function AnnotationService(connection) {
   // ensure compatibility with nsIAnnotationService.
   self.EXPIRE_WITH_HISTORY = 0;
   self.EXPIRE_NEVER = 1;
+  self.EXPIRE_SESSION = 2;
 
   initialize();
 }

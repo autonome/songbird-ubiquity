@@ -253,6 +253,55 @@ MathParser.prototype.parse = function(e){
   return o.eval(e);
 };
 
+CmdUtils.CreateCommand({
+    name: "gcalculate",
+    takes: {"expression": noun_arb_text},
+
+    description: "Calculate knows many functions, constants, units, currencies, etc.",
+    help: "Try 5% of 700,  sin( sqrt( ln(pi))),  (1+i)^3,  15 mod 9, (5 choose 2) / 3!,  speed of light in miles per hour,  3 dollars in euros,  242 in hex, MCMXVI in decimal.",
+
+    icon: "chrome://ubiquity/skin/icons/calculator.png",
+
+    author: { name: "Axel Boldt", email: "axelboldt@yahoo.com"},
+    homepage: "http://math-www.uni-paderborn.de/~axel/",
+    license: "Public domain",
+
+    // URL of Google page to which expression is to be appended. We want only 1 result.
+    _google_url: "http://www.google.com/search?hl=en&num=1&q=",
+
+    // Regular expression that matches a Google result page iff it is a calculator result;
+    // first subexpression matches the actual result
+    _calc_regexp: /\/calc_img\.gif.*?<b>(.*?)<\/b>/i,
+
+    // Link to calculator command help:
+    _calc_help: "Examples: 3^4/sqrt(2)-pi,&nbsp;&nbsp;3 inch in cm,&nbsp;&nbsp; speed of light,&nbsp;&nbsp; 0xAF in decimal<br><u><a href=\"http://www.googleguide.com/calculator.html\">(Command List)</a></u>",
+
+    execute: function( directObj ) {
+      var expression = directObj.text;
+      var url = this._google_url + encodeURIComponent(expression);
+      Utils.openUrlInBrowser( url );
+    },
+
+    preview: function( pblock, directObj ) {
+
+      var expression = directObj.text;
+      var cmd = this;
+
+      pblock.innerHTML = this._calc_help;
+
+      jQuery.get( this._google_url + encodeURIComponent(expression), {}, 
+         function( result_page ) {
+           var matchresult = result_page.match(cmd._calc_regexp);
+           if (matchresult) {
+              pblock.innerHTML = "<h2>" + matchresult[1] + "</h2>" + cmd._calc_help;
+           } else {
+              pblock.innerHTML = cmd._calc_help;
+           }
+       });
+      }
+  })
+
+
 
 // -----------------------------------------------------------------
 // SPARKLINE
@@ -408,6 +457,7 @@ function translateTo( text, langCodePair, callback ) {
 }
 
 CmdUtils.CreateCommand({
+  DEFAULT_LANG_PREF : "extensions.ubiquity.default_translation_lang",
   name: "translate",
   description: "Translates from one language to another.",
   icon: "http://www.google.com/favicon.ico",
@@ -419,19 +469,28 @@ CmdUtils.CreateCommand({
   modifiers: {to: noun_type_language, from: noun_type_language},
 
   execute: function( directObj, languages ) {
-    // Default to translating to English if no to language
-    // is specified.
-    // TODO: Choose the default in a better way.
-
-    var toLangCode = languages.to.data || "en";
+    var toLangCode = languages.to.data || this._getDefaultLang();
     var fromLang = languages.from.data || "";
 
     translateTo( directObj.text, {to:toLangCode} );
   },
 
+  // Returns the default language for translation.  order of defaults: 
+  // extensions.ubiquity.default_translation_lang > general.useragent.locale > "en" 
+  // And also, if there unknown language code is found any of these preference, we fall back to English.
+  _getDefaultLang: function() {
+      var userLocale = Application.prefs.getValue("general.useragent.locale", "en");
+      var defaultLang = Application.prefs.getValue(this.DEFAULT_LANG_PREF, userLocale);
+      // If defaultLang is invalid lang code, fall back to english.
+	  if (noun_type_language.getLangName(defaultLang) == null)  {
+	       return "en";
+	  }
+	  return defaultLang;	  
+  },
   preview: function( pblock, directObj, languages ) {
-    var toLang = languages.to.text || "English";
-    var toLangCode = languages.to.data || "en";
+    var defaultLang = this._getDefaultLang();
+    var toLang = languages.to.text || noun_type_language.getLangName(defaultLang);
+    var toLangCode = languages.to.data || defaultLang;
     var textToTranslate = directObj.text;
 
     var lang = toLang[0].toUpperCase() + toLang.substr(1);

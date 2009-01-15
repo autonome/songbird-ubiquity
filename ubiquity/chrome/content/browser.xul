@@ -5,7 +5,7 @@
          xmlns:svg="http://www.w3.org/2000/svg">
 <head></head>
   <script type="application/javascript;version=1.7"
-          src="resource://ubiquity-scripts/jquery.js"/>
+          src="resource://ubiquity/scripts/jquery.js"/>
   <script>jQuery.noConflict(); // Fixes #124</script>
   <script type="application/javascript;version=1.7"
           src="chrome://ubiquity/content/ubiquity.js"/>
@@ -17,11 +17,13 @@
     <panel id="transparent-msg-panel" class="msgPanel" hidden="true">
       <div id="cmd-panel" xmlns="http://www.w3.org/1999/xhtml"
                       xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+        <div id="cmd-frame">
         <div id="cmd-entry-container">
           <input id="cmd-entry"/>
         </div>
         <iframe id="cmd-preview"
                 src="chrome://ubiquity/content/preview.html"></iframe>
+        </div>
       </div>    
     </panel>
   </popupset>

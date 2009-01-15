@@ -36,6 +36,10 @@
 
 var EXPORTED_SYMBOLS = ["PrefCommands"];
 
+var ubiquityProtocol = Components.utils.import(
+  "resource://ubiquity/modules/ubiquity_protocol.js"
+);
+
 var Application = Components.classes["@mozilla.org/fuel/application;1"]
                   .getService(Components.interfaces.fuelIApplication);
 
@@ -57,6 +61,15 @@ var PrefCommands = {
   },
 
   get id() {
-    return "data:application/x-javascript," + escape(this.getCode());
+    return "ubiquity://command-editor-code";
   }
 };
+
+ubiquityProtocol.setPath(
+  "command-editor-code",
+  function makeDataUri() {
+    let uri = ("data:application/x-javascript," +
+               escape(PrefCommands.getCode()));
+    return uri;
+  }
+);

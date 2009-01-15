@@ -35,25 +35,24 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-Components.utils.import("resource://ubiquity-modules/utils.js");
-Components.utils.import("resource://ubiquity-modules/nounutils.js");
-Components.utils.import("resource://ubiquity-modules/sandboxfactory.js");
-Components.utils.import("resource://ubiquity-modules/codesource.js");
-Components.utils.import("resource://ubiquity-modules/parser/parser.js");
-Components.utils.import("resource://ubiquity-modules/parser/locale_en.js");
-Components.utils.import("resource://ubiquity-modules/linkrel_codesvc.js");
-Components.utils.import("resource://ubiquity-modules/cmdmanager.js");
-Components.utils.import("resource://ubiquity-modules/cmdsource.js");
-Components.utils.import("resource://ubiquity-modules/localeutils.js");
-Components.utils.import("resource://ubiquity-modules/collection.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
+Components.utils.import("resource://ubiquity/modules/nounutils.js");
+Components.utils.import("resource://ubiquity/modules/sandboxfactory.js");
+Components.utils.import("resource://ubiquity/modules/codesource.js");
+Components.utils.import("resource://ubiquity/modules/parser/parser.js");
+Components.utils.import("resource://ubiquity/modules/parser/locale_en.js");
+Components.utils.import("resource://ubiquity/modules/feedmanager.js");
+Components.utils.import("resource://ubiquity/modules/cmdmanager.js");
+Components.utils.import("resource://ubiquity/modules/localeutils.js");
+Components.utils.import("resource://ubiquity/modules/collection.js");
 
-Components.utils.import("resource://ubiquity-tests/framework.js");
-Components.utils.import("resource://ubiquity-tests/test_safebox.js");
-Components.utils.import("resource://ubiquity-tests/test_eventhub.js");
-Components.utils.import("resource://ubiquity-tests/test_suggestion_memory.js");
-Components.utils.import("resource://ubiquity-tests/test_annotation_memory.js");
+Components.utils.import("resource://ubiquity/tests/framework.js");
+Components.utils.import("resource://ubiquity/tests/test_safebox.js");
+Components.utils.import("resource://ubiquity/tests/test_eventhub.js");
+Components.utils.import("resource://ubiquity/tests/test_suggestion_memory.js");
+Components.utils.import("resource://ubiquity/tests/test_annotation_memory.js");
 
-Components.utils.import("resource://ubiquity-tests/test_tag_command.js");
+Components.utils.import("resource://ubiquity/tests/test_tag_command.js");
 
 var globalObj = this;
 const LANG = "en";
@@ -122,7 +121,7 @@ function testCompositeCollectionWorks() {
   this.assert(iter.next().id == 'd');
 }
 
-function testMixedCodeSourceCollectionWorks() {
+function testMixedCodeSourceWorks() {
   let a = new StringCodeSource('a', 'a');
   let b = new StringCodeSource('b', 'b');
   let c = new StringCodeSource('c', 'c');
@@ -130,16 +129,13 @@ function testMixedCodeSourceCollectionWorks() {
   let e = new StringCodeSource('e', 'e');
   let f = new StringCodeSource('f', 'f');
 
-  let mixed = new MixedCodeSourceCollection(
-    new IterableCollection([a, b]),
-    new IterableCollection([c, d]),
-    new IterableCollection([e, f])
-    );
+  let headers = new IterableCollection([a, b]);
+  let footers = new IterableCollection([e, f]);
 
-  let codeSources = [];
-  for (cs in mixed) {
-    codeSources.push(cs);
-  }
+  let codeSources = [
+    new MixedCodeSource(c, headers, footers),
+    new MixedCodeSource(d, headers, footers)
+  ];
 
   this.assert(codeSources[0].getCode() == 'abcef');
   this.assert(codeSources[0].id == 'c');
@@ -152,31 +148,56 @@ function testMixedCodeSourceCollectionWorks() {
   this.assert(codeSources[1].codeSections[2].length == 1);
 }
 
-function testLinkRelCodeServiceWorks() {
-  var LRCS = new LinkRelCodeService(new TestAnnotationMemory(this));
+function testFeedManagerWorks() {
+  var FMgr = new FeedManager(new TestAnnotationMemory(this));
+  var fakeFeedPlugin = {
+    type: 'fake',
+    makeFeed: function makeFeed(baseFeedInfo, hub) {
+      var feedInfo = {};
+
+      feedInfo.refresh = function refresh() {
+        this.commandNames = [];
+        this.nounTypes = [];
+        this.commands = [];
+        this.pageLoadFuncs = [];
+      };
+
+      feedInfo.__proto__ = baseFeedInfo;
+
+      return feedInfo;
+    }
+  };
+
+  FMgr.registerPlugin(fakeFeedPlugin);
+
   var url = "http://www.foo.com";
+  var sourceUrl = "http://www.foo.com/code.js";
   var code = "function blah() {}";
 
-  this.assert(!LRCS.isMarkedPage(url));
-  LRCS.addMarkedPage({url: url,
-                      sourceCode: code,
-                      canUpdate: false});
-  this.assert(LRCS.isMarkedPage(url));
+  this.assert(!FMgr.isSubscribedFeed(url));
+  FMgr.addSubscribedFeed({url: url,
+                          sourceUrl: sourceUrl,
+                          sourceCode: code,
+                          canAutoUpdate: false,
+                          type: 'fake'});
+  this.assert(FMgr.isSubscribedFeed(url));
 
-  var results = LRCS.getMarkedPages();
+  var results = FMgr.getSubscribedFeeds();
 
   this.assert(results.length == 1);
 
   // Ensure the result is what we think it is.
-  var page = results[0];
-  this.assert(page.getCode() == code);
+  var feed = results[0];
+  this.assert(feed.getCode() == code);
 
-  // Add another marked page and make sure things still make sense.
+  // Add another subscribed feed and make sure things still make sense.
   var moreCode = "function narg() {}";
-  LRCS.addMarkedPage({url: "http://www.bar.com",
-                      sourceCode: moreCode,
-                      canUpdate: false});
-  results = LRCS.getMarkedPages();
+  FMgr.addSubscribedFeed({url: "http://www.bar.com",
+                          sourceUrl: "http://www.bar.com/code.js",
+                          sourceCode: moreCode,
+                          canAutoUpdate: false,
+                          type: 'fake'});
+  results = FMgr.getSubscribedFeeds();
 
   this.assert(results[0].getCode() == code);
   this.assert(results[1].getCode() == moreCode);
@@ -189,7 +210,7 @@ function testLinkRelCodeServiceWorks() {
 
   results[0].remove();
 
-  this.assert(!LRCS.isMarkedPage(url));
+  this.assert(!FMgr.isSubscribedFeed(url));
 }
 
 function FakeCommandSource( cmdList ) {
@@ -356,216 +377,6 @@ function testIterableCollectionWorks() {
     count += 1;
   }
   this.assert(count == 1, "count must be 1.");
-}
-
-function testCommandSourcePageLoadFuncsWork() {
-  var testCode = "pageLoadFuncs = [function(window) {window.called = true;}];";
-  var testCodeSource = {
-    getCode : function() { return testCode; },
-    id: 'test'
-  };
-
-  var cmdSrc = new CommandSource(testCodeSource, undefined,
-                                 new SandboxFactory({}, globalObj));
-
-  var window = {called: false};
-  cmdSrc.onPageLoad(window);
-  this.assertEquals(window.called, true);
-}
-
-function testCommandSourceOneCmdWorks() {
-  var testCode = "function cmd_foo_thing() { return 5; }";
-  var testCodeSource = {
-    getCode : function() { return testCode; },
-    id: 'test'
-  };
-
-  var cmdSrc = new CommandSource(testCodeSource, undefined,
-                                 new SandboxFactory({}, globalObj));
-  this.assert(!cmdSrc.getCommand("nonexistent"),
-              "Nonexistent commands shouldn't exist.");
-  var cmd = cmdSrc.getCommand("foo-thing");
-  this.assert(cmd, "Sample command should exist.");
-  this.assert(cmd.execute() == 5,
-              "Sample command should execute properly.");
-}
-
-function testCommandSourceTwoCodeSourcesWork() {
-  var testCode1 = "a=5;function cmd_foo() { return a; }\n";
-  var testCode2 = "a=6;function cmd_bar() { return a; }\n";
-
-  var testCodeSource1 = {
-    getCode : function() { return testCode1; },
-    id: 'source1'
-  };
-
-  var testCodeSource2 = {
-    getCode : function() { return testCode2; },
-    id: 'source2'
-  };
-
-  var sources = {
-    __iterator__: function() { yield testCodeSource1;
-                               yield testCodeSource2; }
-  };
-
-  var cmdSrc = new CommandSource(sources,
-                                 undefined,
-                                 new SandboxFactory({}, globalObj));
-  this.assert(!cmdSrc.getCommand("nonexistent"),
-              "Nonexistent commands shouldn't exist.");
-
-  var cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd, "Sample command 'foo' should exist.");
-  this.assert(cmd.execute() == 5,
-              "Sample command 'foo' should execute properly.");
-
-  cmd = cmdSrc.getCommand("bar");
-  this.assert(cmd, "Sample command 'bar' should exist.");
-  this.assert(cmd.execute() == 6,
-              "Sample command 'bar' should execute properly.");
-
-  // Remove code source containing 'bar' command...
-  sources.__iterator__ = function() { yield testCodeSource1; };
-
-  cmdSrc.refresh();
-
-  cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd, "Sample command 'foo' should exist.");
-
-  this.assert(!cmdSrc.getCommand("bar"),
-              "Sample command 'bar' should be removed.");
-
-  // Remove code source containing 'foo' command...
-  sources.__iterator__ = function() { yield testCodeSource2; };
-
-  cmdSrc.refresh();
-
-  cmd = cmdSrc.getCommand("bar");
-  this.assert(cmd, "Sample command 'bar' should exist.");
-
-  this.assert(!cmdSrc.getCommand("foo"),
-              "Sample command 'foo' should be removed.");
-}
-
-function testCommandSourceCatchesExceptionsWhenLoading() {
-  var mockMsgService = {
-    displayMessage : function(msg) { this.lastMsg = msg; }
-  };
-
-  var testCodeSource = {
-    getCode : function() { return "awegaewg"; },
-    id: "test"
-  };
-
-  var cmdSrc = new CommandSource(testCodeSource, mockMsgService,
-                                 new SandboxFactory({}, globalObj));
-  cmdSrc.getCommand("existentcommand");
-
-  this.assert(
-    (mockMsgService.lastMsg.text.indexOf("exception occurred") >= 0 &&
-     mockMsgService.lastMsg.exception),
-    "Command source must log exception."
-  );
-}
-
-function testCommandSourceTwoCmdsWork() {
-  var testCode = ("function cmd_foo() { return 5; }\n" +
-                  "function cmd_bar() { return 6; }\n");
-
-  var testCodeSource = {
-    getCode : function() { return testCode; },
-    id: "test"
-  };
-
-  var cmdSrc = new CommandSource(testCodeSource, undefined,
-                                 new SandboxFactory({}, globalObj));
-  this.assert(!cmdSrc.getCommand("nonexistent"),
-              "Nonexistent commands shouldn't exist.");
-
-  var cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd, "Sample command 'foo' should exist.");
-  this.assert(cmd.execute() == 5,
-              "Sample command 'foo' should execute properly.");
-
-  cmd = cmdSrc.getCommand("bar");
-  this.assert(cmd, "Sample command 'bar' should exist.");
-  this.assert(cmd.execute() == 6,
-              "Sample command 'bar' should execute properly.");
-}
-
-function testCommandNonGlobalsAreResetBetweenInvocations() {
-  var testCode = ( "x = 1; function cmd_foo() { return x++; }" );
-
-  var testCodeSource = {
-    getCode : function() { return testCode; },
-    id: "test"
-  };
-
-  var cmdSrc = new CommandSource(testCodeSource, undefined,
-                                 new SandboxFactory({}, globalObj));
-
-  var cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd.execute() == 1,
-              "Command 'foo' should return 1 on first call.");
-
-  // Change the code returned from the code source so we're
-  // guaranteed to rebuild the context.
-  testCode += "/* trivial code change */";
-  cmdSrc.refresh();
-
-  cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd.execute() == 1,
-              "Command 'foo' should return 1 on second call.");
-}
-
-function testMakeGlobalsWork() {
-  function makeGlobals(codeSource) {
-    return {id: codeSource.id};
-  }
-
-  var testCode = "function cmd_foo() { return id; }";
-
-  var testCodeSource = {
-    getCode : function() { return testCode; },
-    id: "test"
-  };
-
-  var sandboxFactory = new SandboxFactory(makeGlobals, globalObj);
-
-  var cmdSrc = new CommandSource(testCodeSource, undefined, sandboxFactory);
-
-  var cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd.execute() == "test",
-              "Command 'foo' should return 'test'.");
-}
-
-function testCommandGlobalsWork() {
-  var testCode = ( "function cmd_foo() { " +
-                   "  if (globals.x) " +
-                   "    return ++globals.x; " +
-                   "  globals.x = 1; " +
-                   "  return globals.x; " +
-                   "}" );
-
-  var testCodeSource = {
-    getCode : function() { return testCode; },
-    id: "test"
-  };
-
-  var sandboxFactory = new SandboxFactory({globals: {}}, globalObj);
-
-  var cmdSrc = new CommandSource(testCodeSource, undefined, sandboxFactory);
-
-  var cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd.execute() == 1,
-              "Command 'foo' should return 1 on first call.");
-
-  cmdSrc.refresh();
-
-  cmd = cmdSrc.getCommand("foo");
-  this.assert(cmd.execute() == 2,
-              "Command 'foo' should return 2 on second call.");
 }
 
 // This tests bug #25, but it's being commented out for now so that
@@ -820,6 +631,25 @@ function testImplicitPronoun() {
   completions = getCompletions("eat this", [cmd_eat], [food, place],
 			       fakeContext);
   this.assert( completions.length == 0, "should have no completions");
+}
+
+function testDontInterpolateInTheMiddleOfAWord() {
+  // a word like "iterate" contains "it", but the selection should not
+  // be interpolated in place of that "it".
+  var cmd_google = makeSearchCommand("google");
+  var fakeContext = { textSelection: "flab", htmlSelection:"flab" };
+  var completions = getCompletions("google iterate", [cmd_google],
+				   [noun_arb_text], fakeContext);
+  this.assert( completions.length == 1, "Should have 1 completion");
+  this.assert( completions[0]._argSuggs.direct_object.text == "iterate",
+	       "Should not interpolate for the 'it' in 'iterate'.");
+  completions = getCompletions("google it erate", [cmd_google],
+				   [noun_arb_text], fakeContext);
+  this.assert( completions.length == 2, "Should have 2 completions.");
+  this.assert( completions[0]._argSuggs.direct_object.text == "flab erate",
+	       "Should interpolate 'flab' for 'it'.");
+  this.assert( completions[1]._argSuggs.direct_object.text == "it erate",
+	       "input without interpolation should also be suggested.");
 }
 
 function testMakeSugg() {
@@ -1103,7 +933,8 @@ function testSynonyms() {
 }
 
 function testPartiallyParsedSentence() {
-
+  // TODO this test will need rewriting, because NLParser.Verb is about
+  // to not exist.
   // make sure it also works with a no-arg command:
   var cmd_grumble = {
     name: "grumble",
@@ -1644,15 +1475,29 @@ function testUbiquityComponentAcceptsJsVersion() {
 }
 
 function testXmlScriptCommandsParser() {
-  Components.utils.import("resource://ubiquity-modules/xml_script_commands_parser.js");
+  Components.utils.import("resource://ubiquity/modules/xml_script_commands_parser.js");
   var code = parseCodeFromXml('<foo>\n<script class="commands"><![CDATA[testing\n\n\n>]]></script></foo>');
   this.assert(code.length == 1);
   this.assert(code[0].lineNumber == 2, "hi");
   this.assert(code[0].code == 'testing\n\n\n>');
 }
 
+function testLocalUriCodeSourceWorksWithBadFilenames() {
+  var urls = ["chrome://truly-nonexistent",
+              "file:///truly-nonexistent",
+              "resource://truly-nonexistent",
+              "ubiquity:///truly-nonexistent"];
+  var self = this;
+
+  urls.forEach(
+    function(url) {
+      var lucs = new LocalUriCodeSource(url);
+      self.assertEquals(lucs.getCode(), "");
+    });
+}
+
 function testLoadLocaleJsonWorks() {
-  var dat = loadLocaleJson("resource://ubiquity-tests/test_all.json");
+  var dat = loadLocaleJson("resource://ubiquity/tests/test_all.json");
   this.assert(dat.testLoadLocaleJsonWorks.length == 1);
   this.assert(dat.testLoadLocaleJsonWorks == "\u3053");
 }
@@ -1683,6 +1528,6 @@ function getLocalFileAsUtf8(url) {
 // TODO: This is a horrible workaround; modifying the tests to use
 // localeutils.js makes them unreadable and hard to maintain, but there
 // doesn't seem to be any way of loading utf-8 JS from xpcshell.
-eval(getLocalFileAsUtf8("resource://ubiquity-tests/test_locale_jp.js"));
+eval(getLocalFileAsUtf8("resource://ubiquity/tests/test_locale_jp.js"));
 
 exportTests(this);
