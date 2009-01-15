@@ -351,3 +351,111 @@ for (var i = 0; i < includedProperties.length; i++) {
   }
 }
 
+/**
+ * TODO: playlist commands
+ * - DONE: search for playlist by name
+ * - search tracks by name of playlist
+ * - save current view as a playlist
+ * - add currently-playing song to a playlist
+ */
+var noun_type_playlist = {
+  _name: "playlist",
+  suggest: function( text, html ) {
+    var suggestions = [];
+    this.getPlaylistNames().every(function(aPlaylistName) {
+      if (aPlaylistName.toLowerCase().indexOf(text.toLowerCase()) > -1)
+        suggestions.push(CmdUtils.makeSugg(aPlaylistName, aPlaylistName, aPlaylistName));
+      return suggestions.length < 5;
+    });
+    return suggestions;
+  },
+  getPlaylistNames: function() {
+    var Cu = Components.utils;
+    Cu.import("resource://app/jsmodules/sbProperties.jsm");
+    Cu.import("resource://app/jsmodules/sbLibraryUtils.jsm");
+
+    var names = [];
+    var listener = {
+      onEnumerationBegin: function(aMediaList) {},
+      onEnumeratedItem: function(aMediaList, aMediaItem) {
+        var value = aMediaItem.getProperty(SBProperties.mediaListName);
+        var isHidden = aMediaItem.getProperty(SBProperties.hidden) == 1;
+        // TODO: wtf is listType? values are 1 and 2.
+        //var listType = aMediaItem.getProperty(SBProperties.listType);
+
+        // don't return lists with titles that are null
+        // or are a special localizable built-in list
+        if (!isHidden && value && !value.match(/^\&/))
+          names.push(value);
+      },
+      onEnumerationEnd: function(aMediaList, aStatusCode) {}
+    };
+
+    var list = LibraryUtils.mainLibrary;
+    var values = list.enumerateItemsByProperty(SBProperties.isList, "1", listener,
+                                               Ci.sbIMediaList.ENUMERATIONTYPE_SNAPSHOT);
+    return names;
+  },
+  getPlaylistByName: function(aName) {
+    var Cu = Components.utils;
+    Cu.import("resource://app/jsmodules/sbProperties.jsm");
+    Cu.import("resource://app/jsmodules/sbLibraryUtils.jsm");
+
+    var list;
+    var listener = {
+      onEnumerationBegin: function(aMediaList) {},
+      onEnumeratedItem: function(aMediaList, aMediaItem) {
+        var name = aMediaItem.getProperty(SBProperties.mediaListName);
+        if (name && name.toLowerCase() == aName.toLowerCase()) {
+          list = aMediaItem;
+          return Ci.sbIMediaListEnumerationListener.CANCEL;
+        }
+      },
+      onEnumerationEnd: function(aMediaList, aStatusCode) {}
+    };
+
+    var library = LibraryUtils.mainLibrary;
+    var values = library.enumerateItemsByProperty(SBProperties.isList, "1", listener,
+                                               Ci.sbIMediaList.ENUMERATIONTYPE_SNAPSHOT);
+    list.QueryInterface(Ci.sbIMediaList);
+    return list;
+  }
+};
+
+CmdUtils.CreateCommand({
+  name: "playlist",
+  homepage: "http://autonome.wordpress.com/",
+  author: { name: "Dietrich Ayala", email: "autonome@gmail.com"},
+  license: "MPL/GPL/LGPL",
+  icon: "chrome://ubiquity/skin/icons/music.png",
+  description: "Search for playlist",
+  takes: {"term": noun_type_playlist},
+  preview: function(pblock, term) {
+    if (term)
+      pblock.innerHTML = "Search for playlist: " + term.text + "\"";
+    else
+      pblock.innerHTML = "Search by playlist";
+  },
+  execute: function(directObject, modifiers) {
+    var list = noun_type_playlist.getPlaylistByName(directObject.text);
+    if (!list)
+      return;
+      
+    // create a new view from the main library
+    var view = list.createView();
+
+    // now go load the view in the tabbrowser  
+    var window = Cc["@mozilla.org/appshell/window-mediator;1"].
+                   getService(Ci.nsIWindowMediator).
+                   getMostRecentWindow("Songbird:Main").window;
+    var gBrowser = window.gBrowser;
+
+    gBrowser.loadMediaList(list)
+  }
+});
+
+function LOG(aMsg) {
+    ConsoleService = Components.classes["@mozilla.org/consoleservice;1"].getService(Components.interfaces.nsIConsoleService);
+    if(ConsoleService)
+	    ConsoleService.logStringMessage("songbird-ubiquity: " + aMsg);
+}
