@@ -257,6 +257,9 @@ FMgrProto.isUnsubscribedFeed = function FMgr_isSubscribedFeed(uri) {
 
 FMgrProto.installToWindow = function FMgr_installToWindow(window) {
   var self = this;
+  
+  var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                          .getService(Components.interfaces.nsIXULAppInfo);
 
   function showNotification(plugin, targetDoc, commandsUrl, mimetype) {
     var Cc = Components.classes;
@@ -266,6 +269,9 @@ FMgrProto.installToWindow = function FMgr_installToWindow(window) {
     // through all the open windows and all the <browsers> in each.
     var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
              getService(Ci.nsIWindowMediator);
+    if(xulAppInfo.name == "Songbird"){
+    var enumerator = wm.getEnumerator("Songbird:Main");
+    }         
     var enumerator = wm.getEnumerator("navigator:browser");
     var tabbrowser = null;
     var foundBrowser = null;

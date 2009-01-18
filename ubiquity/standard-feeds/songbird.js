@@ -13,6 +13,7 @@ CmdUtils.CreateCommand({
   license: "MPL/GPL/LGPL",
   icon: "chrome://ubiquity/skin/icons/control_play.png",
   description: "Play the first song in the playlist",
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function() {
     
     if (typeof(Cc) == "undefined")
@@ -33,6 +34,7 @@ CmdUtils.CreateCommand({
   license: "MPL/GPL/LGPL",
   icon: "chrome://ubiquity/skin/icons/control_end.png",
   description: "Switch to the next song",
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function() {
     
     if (typeof(Cc) == "undefined")
@@ -52,7 +54,8 @@ CmdUtils.CreateCommand({
   author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
   license: "MPL/GPL/LGPL",
   icon: "chrome://ubiquity/skin/icons/control_start.png",
-  description: "Switch to the previous song",  
+  description: "Switch to the previous song",
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function() {
     
     if (typeof(Cc) == "undefined")
@@ -72,7 +75,8 @@ CmdUtils.CreateCommand({
   author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
   license: "MPL/GPL/LGPL",
   icon: "chrome://ubiquity/skin/icons/control_pause.png", 
-  description: "Pause the current song",    
+  description: "Pause the current song",
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function() {
     
     if (typeof(Cc) == "undefined")
@@ -92,7 +96,8 @@ CmdUtils.CreateCommand({
   author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
   license: "MPL/GPL/LGPL",
   icon: "chrome://ubiquity/skin/icons/control_stop.png",
-  description: "Stop the current song",      
+  description: "Stop the current song",
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function() {
     
     if (typeof(Cc) == "undefined")
@@ -114,6 +119,7 @@ CmdUtils.CreateCommand({
   license: "MPL/GPL/LGPL",
   icon: "chrome://service-icons/skin/hypemachine.ico",
   takes: {"song": noun_arb_text},
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function( searchTerm ) {
     var url = "http://hypem.com/search/" + searchTerm.text + "/1/";
     Utils.openUrlInBrowser( url );
@@ -128,6 +134,7 @@ CmdUtils.CreateCommand({
   license: "MPL/GPL/LGPL",
   icon: "chrome://service-icons/skin/skreemr.ico",
   takes: {"song": noun_arb_text},
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
   execute: function( searchTerm ) {
     var url = "http://www.skreemr.com/results.jsp?q=" + searchTerm.text;
     Utils.openUrlInBrowser( url );
