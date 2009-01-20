@@ -139,6 +139,51 @@ CmdUtils.CreateCommand({
     var url = "http://www.skreemr.com/results.jsp?q=" + searchTerm.text;
     Utils.openUrlInBrowser( url );
   }
+})
+
+CmdUtils.CreateCommand({
+  name: "mute",
+  homepage: "http://geekshadow.com/",
+  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
+  license: "MPL/GPL/LGPL",
+  icon: "chrome://ubiquity/skin/icons/mute.png",
+  description: "Mute sound",
+  preview: function( pblock ) {pblock.innerHTML=this.description;},
+  execute: function() {
+    
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
+
+    gMM.volumeControl.mute = true;
+    
+  }
+})
+  
+CmdUtils.CreateCommand({
+  name: "volume",
+  homepage: "http://geekshadow.com/",
+  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
+  license: "MPL/GPL/LGPL",
+  icon: "chrome://ubiquity/skin/icons/volume.png",
+  takes: {"0 to 100": noun_arb_text},
+  description: "Change the volume",
+  preview: function( pblock, theShout) {pblock.innerHTML=this.description;},
+  execute: function( theShout ) {
+    
+    if (typeof(Cc) == "undefined")
+        var Cc = Components.classes;
+    if (typeof(Ci) == "undefined")
+        var Ci = Components.interfaces;
+    var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
+                    .getService(Ci.sbIMediacoreManager);
+var vol = theShout.text/100;
+gMM.volumeControl.volume = vol;
+    
+  }
 });
 
 // XXX context is broken in sb-ubiquity
@@ -183,7 +228,7 @@ function makeSBSearchCommand(aProperty) {
     homepage: "http://autonome.wordpress.com/",
     author: { name: "Dietrich Ayala", email: "autonome@gmail.com"},
     license: "MPL/GPL/LGPL",
-    icon: "chrome://ubiquity/skin/icons/music.png",
+    icon: "chrome://gonzo/skin/service-pane/icon-library.png",
     description: "Search for " + propertyName
   };
 
@@ -434,7 +479,7 @@ CmdUtils.CreateCommand({
   homepage: "http://autonome.wordpress.com/",
   author: { name: "Dietrich Ayala", email: "autonome@gmail.com"},
   license: "MPL/GPL/LGPL",
-  icon: "chrome://ubiquity/skin/icons/music.png",
+  icon: "chrome://gonzo/skin/service-pane/icon-playlist.png",
   description: "Search for playlist",
   takes: {"term": noun_type_playlist},
   preview: function(pblock, term) {
