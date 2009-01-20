@@ -158,10 +158,15 @@ CmdUtils.CreateCommand({
     var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
                     .getService(Ci.sbIMediacoreManager);
 
-    gMM.volumeControl.mute = true;
+    if (gMM.volumeControl.mute == true) {
+      gMM.volumeControl.mute = false;
+    }
     
+    else {
+      gMM.volumeControl.mute = true;
+    }
   }
-})
+}) 
   
 CmdUtils.CreateCommand({
   name: "volume",
@@ -169,7 +174,7 @@ CmdUtils.CreateCommand({
   author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
   license: "MPL/GPL/LGPL",
   icon: "chrome://ubiquity/skin/icons/volume.png",
-  takes: {"0 to 100": noun_arb_text},
+  takes: {"0 to 100, up or down": noun_arb_text},
   description: "Change the volume",
   preview: function( pblock, theShout) {pblock.innerHTML=this.description;},
   execute: function( theShout ) {
@@ -180,9 +185,18 @@ CmdUtils.CreateCommand({
         var Ci = Components.interfaces;
     var gMM = Cc["@songbirdnest.com/Songbird/Mediacore/Manager;1"]
                     .getService(Ci.sbIMediacoreManager);
-var vol = theShout.text/100;
-gMM.volumeControl.volume = vol;
-    
+
+    if (theShout.text == "up") {
+        gMM.volumeControl.volume = gMM.volumeControl.volume +0.1;
+       }
+    if (theShout.text == "down") {
+         gMM.volumeControl.volume = gMM.volumeControl.volume -0.1;
+       }
+    if (theShout.text != "up" && theShout.text != "down") {
+       var vol = theShout.text/100;
+       gMM.volumeControl.volume = vol;
+       }
+
   }
 });
 
