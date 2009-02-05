@@ -126,18 +126,18 @@ CmdUtils.CreateCommand({
   }
 }) 
 
-CmdUtils.CreateCommand({ 
-  name: "skreemr",
-  description: "SkreemR audio search",
-  homepage: "http://geekshadow.com/",
-  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
-  license: "MPL/GPL/LGPL",
-  icon: "chrome://service-icons/skin/skreemr.ico",
-  takes: {"song": noun_arb_text},
-  preview: function( pblock ) {pblock.innerHTML=this.description;},
-  execute: function( searchTerm ) {
-    var url = "http://www.skreemr.com/results.jsp?q=" + searchTerm.text;
-    Utils.openUrlInBrowser( url );
+makeSearchCommand({
+  name: "addons",
+  description: "addons",
+  url: "http://addons.songbirdnest.com/search?query={QUERY}",
+  icon: "http://www.getsongbird.com/favicon.ico",
+  takes: {"your shout": noun_arb_text},
+  preview: function( pblock, theShout ) {
+    pblock.innerHTML = "<iframe src='http://addons.songbirdnest.com/search?query=" + theShout.text + "' name='Wiki' id='Wiki' width='490' height='450' marginwidth='0' marginheight='0' frameborder='0' scrolling='yes'></iframe>";
+  },
+    execute: function( theShout ) {
+    var msg = theShout.text + "... " + theShout.text + "......";
+    displayMessage( msg );
   }
 })
 
