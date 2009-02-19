@@ -72,9 +72,18 @@ function Ubiquity(msgPanel, textBox, cmdManager, previewBlock) {
   textBox.addEventListener("keyup",
                            function(event) { self.__onInput(event); },
                            true);
-  textBox.addEventListener("blur",
+  textBox.addEventListener("keypress",
+                           function(event) { self.__onKeyPress(event); },
+                           true);
+
+  var xulr = Components.classes["@mozilla.org/xre/app-info;1"]
+                   .getService(Components.interfaces.nsIXULRuntime);
+
+  if(xulr.OS == "Windows"){                 
+     textBox.addEventListener("blur",
                            function(event) { self.__onBlur(event); },
                            false);
+   }
 
   this.__resetPreview();
 }
@@ -120,10 +129,11 @@ Ubiquity.prototype = {
       this.__cmdManager.moveIndicationDown(this.__makeContext(),
                                            this.__previewBlock);
     } else if (event.keyCode == this.__KEYCODE_TAB) {
-       event.preventDefault();
-       this.__cmdManager.copySuggestionToInput(this.__makeContext(),
-                                               this.__previewBlock,
-                                               this.__textBox);
+      event.preventDefault();
+      var suggestionText = this.__cmdManager.getHilitedSuggestionText(this.__makeContext(),
+                                               this.__previewBlock);
+      if(suggestionText)
+        this.__textBox.value = suggestionText;
     }
   },
 
@@ -133,17 +143,23 @@ Ubiquity.prototype = {
 
     var keyCode = event.keyCode;
 
-    if (keyCode == this.__KEYCODE_ENTER) {
-      if (this.__cmdManager.hasSuggestions()) {
-	      this.__needsToExecute = true;
-      }
-      this.__msgPanel.hidePopup();
-    } else if (keyCode == this.__KEYCODE_UP ||
+    if (keyCode == this.__KEYCODE_UP ||
                keyCode == this.__KEYCODE_DOWN ||
                keyCode == this.__KEYCODE_TAB) {
     } else
       this.__updatePreview();
   },
+
+   __onKeyPress: function(event) {
+     var keyCode = event.keyCode;
+     
+     if (keyCode == this.__KEYCODE_ENTER) {
+       if (this.__cmdManager.hasSuggestions()) {
+         this.__needsToExecute = true;
+       }
+       this.__msgPanel.hidePopup();
+     }
+   },
 
   __onSuggestionsUpdated: function __onSuggestionsUpdated() {
     var input = this.__textBox.value;

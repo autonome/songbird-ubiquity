@@ -102,7 +102,8 @@ NLParser.Parser.prototype = {
 
   nounFirstSuggestions: function( selObj, callback ) {
     let suggs = [];
-    let topGenerics = this._rankedVerbsThatUseGenericNouns.slice(0, 5);
+    let topGenerics = this._rankedVerbsThatUseGenericNouns
+                          .slice(0, NLParser.MAX_SUGGESTIONS);
     let verbsToTry = this._verbsThatUseSpecificNouns.concat( topGenerics );
     for each(verb in verbsToTry) {
       let newPPS = new NLParser.PartiallyParsedSentence( verb,
@@ -300,6 +301,7 @@ NLParser.ParsedSentence.prototype = {
       this._argSuggs = argumentSuggestions;
     }
     this.verbMatchScore = verbMatchScore;
+    this.duplicateDefaultMatchScore = 100;
     this.frequencyScore = 0;  // not yet tracked
     this.argMatchScore = 0;
     /* argument match score starts at 0 and gets +1 for each
@@ -436,35 +438,70 @@ NLParser.ParsedSentence.prototype = {
     return true;
   },
 
-  fillMissingArgsWithDefaults: function() {
-    let newSentence = this.copy();
+  fillMissingArgsWithDefaults: function ps_fwamd() {
+    let newSentences = [this.copy()];
     let defaultValue;
+    let defaultsArray = [];
+    let gotArrayOfDefaults = false;
+    let defaultsSoFar = {};
     for (let argName in this._verb._arguments) {
       if (!this._argSuggs[argName]) {
         let missingArg = this._verb._arguments[argName];
         if (missingArg.default) {
           defaultValue = this._makeSugg(missingArg.default);
-        } else if (missingArg.type.default) { // Argument value from nountype default
-          // TODO note this doesn't allow a nounType to return more than one item from
-          // its default() method.
+        }
+	else if (missingArg.type.default) { // Argument value from nountype default
           defaultValue = missingArg.type.default();
-        } else { // No argument
+        }
+	else { // No argument
           defaultValue = {text:"", html:"", data:null, summary:""};
         }
-        newSentence.setArgumentSuggestion(argName, defaultValue);
+
+        let numDefaults = defaultValue.length;
+        if (numDefaults === 1 || (numDefaults > 1 && gotArrayOfDefaults) ) {
+          // either this is a single-item array, or
+          // we've already used an array of values for a previous modifier,
+          // so just use first default for this modifier
+          defaultValue = defaultValue[0];
+          numDefaults = 0;
+        }
+
+        if (numDefaults) {
+          // first time we've seen multiple defaults, so create an array of sentences
+          gotArrayOfDefaults = true;
+          for (let i = 0; i < numDefaults; i++) {
+            if (i) {
+              newSentences[i] = this.copy();
+              for (let arg in defaultsSoFar) {
+                newSentences[i].setArgumentSuggestion(arg, defaultsSoFar[arg]);
+              }
+              // reduce the match score so that multiple entries with the
+              //   same verb are only shown if there are no other verbs
+              newSentences[i].duplicateDefaultMatchScore=
+                                      this.duplicateDefaultMatchScore / (i + 1);
+            }
+            newSentences[i].setArgumentSuggestion(argName, defaultValue[i]);
+          }
+        }
+        else {
+          for (let sen in newSentences)
+            newSentences[sen].setArgumentSuggestion(argName, defaultValue);
+          defaultsSoFar[argName] = defaultValue;
+        }
+
       }
     }
-    return newSentence;
+    return newSentences;
   },
 
-  getMatchScores: function() {
+  getMatchScores: function ps_getMatchScores() {
     if (this._cameFromNounFirstSuggestion) {
       return [this.argMatchScore, this.frequencyMatchScore];
-    } else {
-      return [this.frequencyMatchScore,
-	      this.verbMatchScore,
-              this.argMatchScore];
     }
+    return [this.duplicateDefaultMatchScore,
+            this.frequencyMatchScore,
+            this.verbMatchScore,
+            this.argMatchScore];
   },
 
   setFrequencyScore: function( freqScore ) {
@@ -502,7 +539,6 @@ NLParser.PartiallyParsedSentence = function(verb, argStrings, selObj,
   let newSen = new NLParser.ParsedSentence(this._verb, {}, this._matchScore);
   this._parsedSentences = [newSen];
   for (let argName in this._verb._arguments) {
-    let argSuggs = [];
     if (argStrings[argName] && argStrings[argName].length > 0) {
       // If argument is present, try the noun suggestions based both on
       // substituting pronoun...
@@ -536,7 +572,13 @@ NLParser.PartiallyParsedSentence.prototype = {
       let self = this;
       // Callback function for asynchronously generated suggestions:
       let callback = function(newSugg) {
-        self.addArgumentSuggestion(argName, newSugg);
+        var suggLen = newSugg.length;
+        if (suggLen) {
+           for (let i=0; i < suggLen; i++)
+             self.addArgumentSuggestion(argName, newSugg[i]);
+        } else {
+           self.addArgumentSuggestion(argName, newSugg);
+        }
         // Call our asynchronous suggestion callback.
         if (self._asyncSuggestionCb)
           self._asyncSuggestionCb();
@@ -559,6 +601,7 @@ NLParser.PartiallyParsedSentence.prototype = {
     }
   },
 
+
   _suggestWithPronounSub: function(argName, words) {
     /* */
     let gotAnySuggestions = false;
@@ -569,9 +612,6 @@ NLParser.PartiallyParsedSentence.prototype = {
     let selection = this._selObj.text;
     let htmlSelection = this._selObj.html;
 
-    dump("SuggestWithPronounSub called.  words is " + words + ", ");
-    dump("selection is " + selection + ", html selection is " + htmlSelection);
-    dump("\n");
     for each ( pronoun in this._parserPlugin.PRONOUNS ) {
       let regexp = new RegExp("\\b" + pronoun + "\\b");
       let index = words.search(regexp);
@@ -616,7 +656,7 @@ NLParser.PartiallyParsedSentence.prototype = {
     this._parsedSentences = this._parsedSentences.concat(newSentences);
   },
 
-  getParsedSentences: function() {
+  getParsedSentences: function pps_getParsedSentences() {
     /* For any parsed sentence that is missing any arguments, fill in those
     arguments with the defaults before returning the list of sentences.
     The reason we don't set the defaults directly on the object is cuz
@@ -638,14 +678,19 @@ NLParser.PartiallyParsedSentence.prototype = {
       	   * filter out suggestions that fill no arguments.
       	   */
       	  let filledSen = sen.fillMissingArgsWithDefaults();
-      	  filledSen._cameFromNounFirstSuggestion = true;
-      	  parsedSentences.push( filledSen );
+
+      	  for each (let oneSen in filledSen) {
+              oneSen._cameFromNounFirstSuggestion = true;
+              parsedSentences.push(oneSen);
+           }
       	}
       }
     } else {
       for each( let sen in this._parsedSentences) {
 	      let filledSen = sen.fillMissingArgsWithDefaults();
-	      parsedSentences.push( filledSen );
+         for each (let oneSen in filledSen) {
+            parsedSentences.push(oneSen);
+         }
       }
     }
 
@@ -741,11 +786,13 @@ NLParser.Verb.prototype = {
        keys are prepositions
        values are NounTypes.
        example:  { "from" : City, "to" : City, "on" : Day } */
-    this._execute = cmd.execute;
-    this._preview = cmd.preview;
-    this._name = cmd.name;
-    this._icon = cmd.icon;
-    this._synonyms = cmd.synonyms;
+    this._execute     = cmd.execute;
+    this._preview     = cmd.preview;
+    this._description = cmd.description;
+    this._help        = cmd.help;
+    this._name        = cmd.name;
+    this._icon        = cmd.icon;
+    this._synonyms    = cmd.synonyms;
     this.__defineGetter__("previewDelay", function() {
       return cmd.previewDelay;
     });
@@ -811,8 +858,15 @@ NLParser.Verb.prototype = {
       this._preview( context, directObjectVal, argumentValues, previewBlock );
     } else {
       // Command exists, but has no preview; provide a default one.
-      var content = "Executes the <b>" + this._name + "</b> command.";
-      previewBlock.innerHTML = content;
+      var template = "";
+      if (this._description)
+        template += "<h2>The <em>"+this._name+"</em> command</h2><p>"+this._description+"</p>";
+      if (this._help)
+        template += "<h3>How to use it:</h3><p>"+this._help+"</p>";
+      // No description or help available, fall back to old defualt
+      if (template == "")
+        template = "Executes the <b>" + this._name + "</b> command.";;
+      previewBlock.innerHTML = template;
     }
   },
 

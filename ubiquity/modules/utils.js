@@ -242,8 +242,6 @@ Utils.url = function url(spec) {
 // {{{nsIInputStream}}}.
 
 Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
-      var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
-                               .getService(Components.interfaces.nsIXULAppInfo);
   var postInputStream = null;
   if(postData) {
     if(postData instanceof Ci.nsIInputStream) {
@@ -265,14 +263,7 @@ Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
     }
   }
 
-  var windowManager = Cc["@mozilla.org/appshell/window-mediator;1"]
-    .getService(Ci.nsIWindowMediator);
-    if(xulAppInfo.name == "Songbird"){
-  var browserWindow = windowManager.getMostRecentWindow("Songbird:Main");
-	}
-	else{  
-  var browserWindow = windowManager.getMostRecentWindow("navigator:browser");
-  }
+  var browserWindow = Utils.currentChromeWindow;
   var browser = browserWindow.getBrowser();
 
   var prefService = Cc["@mozilla.org/preferences-service;1"]
@@ -289,8 +280,9 @@ Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
   else if(openPref == 3)
     browser.loadOneTab(urlString, null, null, postInputStream, false, false);
   else if(openPref == 2)
-    window.openDialog('chrome://browser/content', '_blank', 'all,dialog=no',
-                  urlString, null, null, postInputStream);
+    browserWindow.openDialog('chrome://browser/content', '_blank',
+                             'all,dialog=no', urlString, null, null,
+                             postInputStream);
   else
     browserWindow.loadURI(urlString, null, postInputStream, false);
 };
@@ -378,7 +370,8 @@ Utils.paramsToString = function paramsToString(params) {
 // it.
 
 Utils.getLocalUrl = function getLocalUrl(url) {
-  var req = new XMLHttpRequest();
+  var req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+            .createInstance(Ci.nsIXMLHttpRequest);
   req.open('GET', url, false);
   req.overrideMimeType("text/plain");
   req.send(null);
@@ -407,7 +400,7 @@ Utils.isArray = function isArray(val) {
     return false;
   if (val == null)
     return false;
-  if (val.constructor.name != "Array")
+  if (!val.constructor || val.constructor.name != "Array")
     return false;
   return true;
 }
@@ -552,9 +545,11 @@ Utils.tabs = {
     var matches = {};
     var matchCount = 0;
     for (var name in this._cache) {
+       var tab = this._cache[name];
       //TODO: implement a better match algorithm
-      if (name.match(aSearchText, "i")) {
-        matches[name] = this._cache[name];
+      if (name.match(aSearchText, "i") || 
+          (tab.document.URL && tab.document.URL.toString().match(aSearchText, "i"))) {
+        matches[name] = tab;
         matchCount++;
       }
       if (aMaxResults && aMaxResults == matchCount)
@@ -666,3 +661,43 @@ Utils.tabs = {
     return this.__cache;
   }
 };
+
+// ** {{{ Utils.appName }}} **
+//
+// This property provides the chrome application name found in nsIXULAppInfo.name.
+// Examples values are "Firefox", "Songbird", "Thunderbird".
+//
+// TODO: cache the value since it won't change for the life of the application.
+
+Utils.__defineGetter__("appName", function() {
+  return Cc["@mozilla.org/xre/app-info;1"].
+         getService(Ci.nsIXULAppInfo).
+         name;
+});
+
+// ** {{{ Utils.appWindowType }}} **
+//
+// This property provides the name of "main" application windows for the chrome
+// application.
+// Examples values are "navigator:browser" for Firefox", and
+// "Songbird:Main" for Songbird.
+
+Utils.__defineGetter__("appWindowType", function() {
+  switch(Utils.appName) {
+    case "Songbird":
+      return "Songbird:Main";
+    default:
+      return "navigator:browser";
+  }
+});
+
+// ** {{{ Utils.currentChromeWindow }}} **
+//
+// This property is a reference to the application chrome window
+// that currently has focus.
+
+Utils.__defineGetter__("currentChromeWindow", function() {
+  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
+           getService(Ci.nsIWindowMediator);
+  return wm.getMostRecentWindow(Utils.appWindowType);
+});

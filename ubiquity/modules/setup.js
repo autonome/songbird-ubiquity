@@ -42,16 +42,16 @@ Components.utils.import("resource://ubiquity/modules/utils.js");
 Components.utils.import("resource://ubiquity/modules/msgservice.js");
 Components.utils.import("resource://ubiquity/modules/feedmanager.js");
 Components.utils.import("resource://ubiquity/modules/default_feed_plugin.js");
-Components.utils.import("resource://ubiquity/modules/locked_down_feed_plugin.js");
 Components.utils.import("resource://ubiquity/modules/annotation_memory.js");
 Components.utils.import("resource://ubiquity/modules/feedaggregator.js");
+Components.utils.import("resource://ubiquity/modules/webjsm.js");
 
 let Application = Components.classes["@mozilla.org/fuel/application;1"]
                   .getService(Components.interfaces.fuelIApplication);
 
 let gServices;
 
-let gIframe;
+let gWebJsModule;
 
 const RESET_SCHEDULED_PREF = "extensions.ubiquity.isResetScheduled";
 const VERSION_PREF ="extensions.ubiquity.lastversion";
@@ -115,15 +115,33 @@ let UbiquitySetup = {
   },
 
   __modifyUserAgent: function __modifyUserAgent() {
+    // This is temporary code to fix old versions of Ubiquity that
+    // modified the User-Agent string without uninstalling cleanly.
+    // See #471 for more information.
     const USERAGENT_PREF = "general.useragent.extra.ubiquity";
-    var expectedPref = "Ubiquity/" + this.version;
-    Application.prefs.setValue(USERAGENT_PREF, expectedPref);
+    Application.prefs.setValue(USERAGENT_PREF, "");
 
-    function removePref() {
-      Application.prefs.setValue(USERAGENT_PREF, "");
-    }
+    // If we're talking to ubiquity.mozilla.com, pass extra information
+    // in the User-Agent string so it knows what version of the
+    // standard feeds to give us.
+    var userAgentExtra = "Ubiquity/" + this.version;
+    var Cc = Components.classes;
+    var Ci = Components.interfaces;
 
-    Application.events.addListener("quit", {handleEvent: removePref});
+    var observer = {
+      observe: function(subject, topic, data) {
+        subject = subject.QueryInterface(Ci.nsIHttpChannel);
+        if (subject.URI.host == "ubiquity.mozilla.com") {
+          var userAgent = subject.getRequestHeader("User-Agent");
+          userAgent += " " + userAgentExtra;
+          subject.setRequestHeader("User-Agent", userAgent, false);
+        }
+      }
+    };
+
+    var observerSvc = Cc["@mozilla.org/observer-service;1"]
+                      .getService(Ci.nsIObserverService);
+    observerSvc.addObserver(observer, "http-on-modify-request", false);
   },
 
   __maybeReset: function __maybeReset() {
@@ -183,31 +201,13 @@ let UbiquitySetup = {
   },
 
   preload: function preload(callback) {
-    if (gIframe) {
+    if (gWebJsModule) {
       callback();
       return;
     }
 
     this.__maybeReset();
-
-    var Cc = Components.classes;
-    var Ci = Components.interfaces;
-    var hiddenWindow = Cc["@mozilla.org/appshell/appShellService;1"]
-                       .getService(Ci.nsIAppShellService)
-                       .hiddenDOMWindow;
-
-    gIframe = hiddenWindow.document.createElement("iframe");
-    gIframe.setAttribute("id", "ubiquityFrame");
-    gIframe.setAttribute("src", "chrome://ubiquity/content/hiddenframe.html");
-    gIframe.addEventListener(
-      "pageshow",
-      function onPageShow() {
-        gIframe.removeEventListener("pageshow", onPageShow, false);
-        callback();
-      },
-      false
-    );
-    hiddenWindow.document.documentElement.appendChild(gIframe);
+    gWebJsModule = new WebJsModule(callback);
   },
 
   get isResetScheduled() {
@@ -248,13 +248,9 @@ let UbiquitySetup = {
 
       var defaultFeedPlugin = new DefaultFeedPlugin(feedManager,
                                                     msgService,
-                                                    gIframe.contentWindow,
+                                                    gWebJsModule,
                                                     this.languageCode,
                                                     this.getBaseUri());
-
-      var ldfPlugin = new LockedDownFeedPlugin(feedManager,
-                                               msgService,
-                                               gIframe.contentWindow);
 
       var cmdSource = new FeedAggregator(
         feedManager,
@@ -273,7 +269,11 @@ let UbiquitySetup = {
         // getting the '@mozilla.org/thread-manager;1' service and
         // spinning via a call to processNextEvent() until some kind of
         // I/O is finished?
-        this.__installDefaults(defaultFeedPlugin);
+        defaultFeedPlugin.installDefaults(
+          this.standardFeedsUri,
+          this.getBaseUri() + "standard-feeds/",
+          this.STANDARD_FEEDS
+        );
 
       cmdSource.refresh();
     }
@@ -291,27 +291,13 @@ let UbiquitySetup = {
       if (!isEnabled)
         return;
 
-      var isValidPage = false;
-      try {
-        // See if we can get the current document;
-        // if we get an exception, then the page that's
-        // been loaded is probably XUL or something,
-        // and we won't want to deal with it.
-
-        // TODO: This probably won't be accurate if it's the case that
-        // the user has navigated to a different tab by the time the
-        // load event occurs.
-        var doc = Application.activeWindow
-                             .activeTab
-                             .document;
-        isValidPage = true;
-      } catch (e) {}
-      if (isValidPage)
+      if (aEvent.originalTarget.location)
         gServices.commandSource.onPageLoad(aEvent.originalTarget);
     }
 
     var appcontent = window.document.getElementById("appcontent");
-    appcontent.addEventListener("DOMContentLoaded", onPageLoad, true);
+    if (appcontent)
+      appcontent.addEventListener("DOMContentLoaded", onPageLoad, true);
   },
 
   get languageCode() {
@@ -325,19 +311,12 @@ let UbiquitySetup = {
     return Application.extensions.get("ubiquity@labs.mozilla.com").version;
   },
 
-  __installDefaults: function installDefaults(defaultFeedPlugin) {
-    let baseLocalUri = this.getBaseUri() + "standard-feeds/";
-    let baseUri;
-
+  get standardFeedsUri() {
     if (this.isInstalledAsXpi()) {
       var STANDARD_FEEDS_PREF = "extensions.ubiquity.standardFeedsUri";
-      baseUri = Application.prefs.getValue(STANDARD_FEEDS_PREF, "");
+      return Application.prefs.getValue(STANDARD_FEEDS_PREF, "");
     } else
-      baseUri = baseLocalUri;
-
-    defaultFeedPlugin.installDefaults(baseUri,
-                                      baseLocalUri,
-                                      this.STANDARD_FEEDS);
+      return this.getBaseUri() + "standard-feeds/";
   }
 };
 

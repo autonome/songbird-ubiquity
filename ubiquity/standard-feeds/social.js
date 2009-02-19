@@ -16,22 +16,26 @@ CmdUtils.CreateCommand({
   synonyms: ["tweet"],
   icon: "http://assets3.twitter.com/images/favicon.ico",
   takes: {status: noun_arb_text},
-  modifiers: {},
+  modifiers: { "as" : noun_type_twitter_user },
   description: "Sets your Twitter status to a message of at most 160 characters.",
-  help: "You'll need a <a href=\"http://twitter.com\">Twitter account</a>, obviously.  If you're not already logged in" +
+  help: "Sets your Twitter status to a message of at most 160 characters. You'll need a <a href=\"http://twitter.com\">Twitter account</a>, obviously.  If you're not already logged in" +
         " you'll be asked to log in.",
-  preview: function(previewBlock, directObj) {
+  preview: function(previewBlock, directObj, mods) {
 	// these are converted in the Twitter database anyway, and counted as 4 characters
     var statusText = directObj.text
 	  .replace("<", "&lt;")
 	  .replace(">", "&gt;");
 
-    var previewTemplate = "Updates your Twitter status to: <br /><b>${status}</b><br /><br />Characters remaining: <b>${chars}</b> <p style='font-size:11px'> tip: tweet @mozillaubiquity for help </p>";
+    var previewTemplate = "Updates your Twitter status to: <br /><b>${status}</b> <br /><br />Characters remaining: <b>${chars}</b> <p style='font-size:11px'> tip: tweet @mozillaubiquity for help </p>";
     var truncateTemplate = "<span style='color: red;'><br />The last <b>${truncate}</b> characters will be truncated!</span>";
     var previewData = {
       status: statusText,
       chars: TWITTER_STATUS_MAXLEN - statusText.length
     };
+    
+    if(mods.as){
+       previewData.username = mods.as.text;
+    }
 
     var previewHTML = CmdUtils.renderTemplate(previewTemplate, previewData);
 
@@ -45,7 +49,7 @@ CmdUtils.CreateCommand({
 
     previewBlock.innerHTML = previewHTML;
   },
-  execute: function(directObj) {
+  execute: function(directObj, mods) {
     var statusText = directObj.text;
     if(statusText.length < 1) {
       displayMessage("Twitter requires a status to be entered");
@@ -55,7 +59,9 @@ CmdUtils.CreateCommand({
     var updateUrl = "https://twitter.com/statuses/update.json";
     var updateParams = {
       source: "ubiquity",
-      status: statusText.slice(0, TWITTER_STATUS_MAXLEN)
+      status: statusText
+      //dont cut the input since sometimes, the user selects a big url, and the total lenght is more than 140, but
+      // tinyurl takes care of that
     };
 
     function make_basic_auth( user, password){
@@ -65,20 +71,13 @@ CmdUtils.CreateCommand({
     };
     
     
-    // TODO: Should respect multiple logins/accounts. Can be implemented as an
-    // optional field in the command (i.e, twitter [text] as [user]).
+    var auth = null;
     
-    var passwordManager = Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
-    var logins = passwordManager.findLogins({}, "http://twitter.com", "", null);
-    
-    if( logins ){
-      var login = logins[0];
-      var auth = make_basic_auth(login.username, login.password);
-      CmdUtils.log( auth );
-    } else {
-      var auth = null;
+    if( mods.as && mods.as.data ){
+       var login = mods.as.data;
+       auth = make_basic_auth(login.username, login.password);
     }
-
+    
 
     jQuery.ajax({
       type: "POST",
@@ -113,6 +112,7 @@ CmdUtils.CreateCommand({
     var doc = CmdUtils.getDocument();
     var sel = doc.getSelection().substring(0,375);
 
+
     var params = Utils.paramsToString({
       phase: "2",
       url: doc.location,
@@ -125,7 +125,7 @@ CmdUtils.CreateCommand({
 
   },
   preview: function(pblock) {
-
+     
     var doc = CmdUtils.getDocument();
     var selected_text= doc.getSelection();
     var api_url='http://services.digg.com/stories';

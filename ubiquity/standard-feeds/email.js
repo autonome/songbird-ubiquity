@@ -1,23 +1,81 @@
-function findGmailTab() {
-  var window = Application.activeWindow;
 
-  var gmailURL = "://mail.google.com";
-  var currentLocation = String(Application.activeWindow.activeTab.document.location);
-  if(currentLocation.indexOf(gmailURL) != -1) {
-    return Application.activeWindow.activeTab;
-  }
+var gmailAppsDomain="";
 
-  for (var i = 0; i < window.tabs.length; i++) {
-    var tab = window.tabs[i];
-    var location = String(tab.document.location);
-    if (location.indexOf(gmailURL) != -1) {
-      return tab;
+CmdUtils.CreateCommand({
+  name: "detect-gmail-apps-domain",
+  execute: function (){
+    if (gmailAppsDomain.length == 0) {
+      getGmailAppsDomain();
+    }
+    if (gmailAppsDomain.secure) {
+      displayMessage( "secure " + gmailAppsDomain );
+    } else {
+      displayMessage( "insecure " + gmailAppsDomain );
     }
   }
-  return null;
+});
+
+function getGmailAppsDomain() {
+  // looks for and returns the gmail-for-apps domain
+  // as well as caches it for next time
+
+  var gmailAppsURL = "://mail.google.com/a/";
+  // return from cache
+  if (gmailAppsDomain.length > 0) {
+    return gmailAppsDomain;
+  }
+  
+  // look in cookie
+  var secure = false;
+  var secCookie = Utils.getCookie("mail.google.com", "GXAS");
+  if (secCookie == undefined) {
+    secCookie = Utils.getCookie("mail.google.com", "GXAS_SEC");
+    secure = true;
+  }
+  
+  if (secCookie != undefined) {
+    // cookie is of the form hosted-domain.com=DQAAAH4AA....
+    var domain = secCookie.split("=")[0];
+    if (domain != undefined && domain.length > 0) {
+      gmailAppsDomain = domain;
+      gmailAppsDomain.secure = secure;
+      return gmailAppsDomain;
+    }
+  } else {
+    // no cookie but look in open tabs
+    var tab = findGmailTab();
+    if (tab != undefined) {
+      var location = String(tab.document.location);
+      if (location.indexOf(gmailAppsURL) != -1) {
+        gmailAppsDomain = extractGmailAppsDomain(location);
+        gmailAppsDomain.secure = (location.indexOf("https://") == 0);
+      }
+    }
+  }
+  
+  return gmailAppsDomain;
 }
 
+function extractGmailAppsDomain(URL) {
+  // given a URL, will find the gmail apps domain part of it
+  if (gmailAppsDomain.length > 0) {
+    return gmailAppsDomain;
+  }
+  var gmailAppsURL = "://mail.google.com/a/";
+  var index = URL.indexOf(gmailAppsURL);
+  if (index != -1) {
+    var domain = URL.slice(index+gmailAppsURL.length);
+    domain = domain.slice(0,domain.indexOf("/"));
+    if (domain != null && domain.length > 0) {
+      return domain;
+    }
+  }
+  return "none";
+}
+
+
 // TODO: Should also use the mailto application mapping.
+// TODO: support Google Apps
 function detectEmailProvider() {
   var domains = {
     "mail.google.com":0,
@@ -48,6 +106,32 @@ function detectEmailProvider() {
   return null;  
 }
 
+CmdUtils.CreateCommand({
+  name: "detect-email-provider",
+  execute: function (){
+    displayMessage( detectEmailProvider() );
+  }
+});
+
+
+function findGmailTab() {
+  var window = Application.activeWindow;
+
+  var gmailURL = "://mail.google.com";
+  var currentLocation = String(Application.activeWindow.activeTab.document.location);
+  if(currentLocation.indexOf(gmailURL) != -1) {
+    return Application.activeWindow.activeTab;
+  }
+
+  for (var i = 0; i < window.tabs.length; i++) {
+    var tab = window.tabs[i];
+    var location = String(tab.document.location);
+    if (location.indexOf(gmailURL) != -1) {
+      return tab;
+    }
+  }
+  return null;
+}
 
 CmdUtils.CreateCommand({
   name: "email",
@@ -149,8 +233,13 @@ CmdUtils.CreateCommand({
   }
 });
 
-function gmailChecker(callback) {
+function gmailChecker(callback, service) {
+  
   var url = "http://mail.google.com/mail/feed/atom";
+  if(service == "googleapps"){
+    url = "http://mail.google.com/a/" + getGmailAppsDomain() + "/feed/atom";
+  }
+      
   Utils.ajaxGet(url, function(rss) {
     CmdUtils.loadJQuery(function(jQuery) {
       var emailDetails = {
@@ -172,10 +261,11 @@ function gmailChecker(callback) {
 }
 
 CmdUtils.CreateCommand({
-  name: "last-email",
+  name: "last-email-from",
+  takes: {"email service": noun_type_emailservice},
   icon: "chrome://ubiquity/skin/icons/email_open.png",
   description: "Displays your most recent incoming email.  Requires a <a href=\"http://mail.google.com\">Google Mail</a> account.",
-  preview: function( pBlock ) {
+  preview: function( pBlock , arg) {
     pBlock.innerHTML = "Displays your most recent incoming email...";
     // Checks if user is authenticated first - if not, do not ajaxGet, as this triggers authentication prompt
     if (Utils.getCookie("mail.google.com", "S") != undefined) {
@@ -189,19 +279,19 @@ CmdUtils.CreateCommand({
             "</a>";
         }
         pBlock.innerHTML = CmdUtils.renderTemplate(previewTemplate, emailDetails);
-      });
+      }, arg.text);
     } else {
       pBlock.innerHTML = "You are not logged in!<br />Press enter to log in.";
     }
   },
-  execute: function() {
+  execute: function(arg) {
     gmailChecker(function(emailDetails) {
       var msgTemplate = "You (${account}) have no new mail.";
       if (emailDetails.lastEmail) {
         msgTemplate = "You (${account}) have new email! ${lastEmail.author} says: ${lastEmail.subject}";
       }
       displayMessage(CmdUtils.renderTemplate(msgTemplate, emailDetails));
-    });
+    }, arg.text);
   }
 });
 
@@ -218,12 +308,5 @@ CmdUtils.CreateCommand({
   },
   execute: function( name ) {
     displayMessage(name.text);
-  }
-});
-
-CmdUtils.CreateCommand({
-  name: "detect-email-provider",
-  execute: function (){
-    displayMessage( detectEmailProvider() );
   }
 });
