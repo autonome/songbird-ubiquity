@@ -47,10 +47,10 @@ Components.utils.import("resource://ubiquity/modules/localeutils.js");
 Components.utils.import("resource://ubiquity/modules/collection.js");
 
 Components.utils.import("resource://ubiquity/tests/framework.js");
-Components.utils.import("resource://ubiquity/tests/test_safebox.js");
 Components.utils.import("resource://ubiquity/tests/test_eventhub.js");
 Components.utils.import("resource://ubiquity/tests/test_suggestion_memory.js");
 Components.utils.import("resource://ubiquity/tests/test_annotation_memory.js");
+Components.utils.import("resource://ubiquity/tests/test_hiddenbrowser.js");
 
 Components.utils.import("resource://ubiquity/tests/test_tag_command.js");
 
@@ -1421,16 +1421,14 @@ function testUbiquityComponentFlagSystemFilenamePrefixWorks() {
 
 function testUbiquityComponentFlagSystemFilenamePrefixCreatesWrappers() {
   // This is a regression test for #434.
+  this.skipIfXPCShell();
+
   var Cc = Components.classes;
   var Ci = Components.interfaces;
   var ubiquity = getUbiquityComponent(this);
 
-  try {
-    var Application = Components.classes["@mozilla.org/fuel/application;1"]
-                      .getService(Components.interfaces.fuelIApplication);
-  } catch (e) {
-    throw new this.SkipTestError();
-  }
+  var Application = Components.classes["@mozilla.org/fuel/application;1"]
+                    .getService(Components.interfaces.fuelIApplication);
 
   ubiquity.flagSystemFilenamePrefix("__arbitraryString1://", true);
 

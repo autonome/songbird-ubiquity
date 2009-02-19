@@ -47,14 +47,19 @@ Components.utils.import("resource://ubiquity/modules/feed_plugin_utils.js");
 
 const CONFIRM_URL = "chrome://ubiquity/content/confirm-add-command.html";
 const DEFAULT_FEED_TYPE = "commands";
+const TRUSTED_DOMAINS_PREF = "extensions.ubiquity.trustedDomains";
+const REMOTE_URI_TIMEOUT_PREF = "extensions.ubiquity.remoteUriTimeout";
 
-function DefaultFeedPlugin(feedManager, messageService, hiddenWindow,
+function DefaultFeedPlugin(feedManager, messageService, webJsm,
                            languageCode, baseUri) {
   this.type = DEFAULT_FEED_TYPE;
 
+  let Application = Components.classes["@mozilla.org/fuel/application;1"]
+                    .getService(Components.interfaces.fuelIApplication);
+
   let builtins = makeBuiltins(languageCode, baseUri);
   let builtinGlobalsMaker = makeBuiltinGlobalsMaker(messageService,
-                                                    hiddenWindow);
+                                                    webJsm);
   let sandboxFactory = new SandboxFactory(builtinGlobalsMaker);
 
   builtins.feeds.forEach(
@@ -107,9 +112,6 @@ function DefaultFeedPlugin(feedManager, messageService, hiddenWindow,
       if (url.scheme != "https")
         return false;
 
-      TRUSTED_DOMAINS_PREF = "extensions.ubiquity.trustedDomains";
-      let Application = Components.classes["@mozilla.org/fuel/application;1"]
-                        .getService(Components.interfaces.fuelIApplication);
       var domains = Application.prefs.getValue(TRUSTED_DOMAINS_PREF, "");
       domains = domains.split(",");
 
@@ -131,9 +133,9 @@ function DefaultFeedPlugin(feedManager, messageService, hiddenWindow,
       }
 
       if (RemoteUriCodeSource.isValidUri(commandsUrl)) {
-        hiddenWindow.jQuery.ajax({url: commandsUrl,
-                                  dataType: "text",
-                                  success: onSuccess});
+        webJsm.jQuery.ajax({url: commandsUrl,
+                            dataType: "text",
+                            success: onSuccess});
       } else
         onSuccess("");
     } else
@@ -141,23 +143,24 @@ function DefaultFeedPlugin(feedManager, messageService, hiddenWindow,
   };
 
   this.makeFeed = function DFP_makeFeed(baseFeedInfo, hub) {
+    var timeout = Application.prefs.getValue(REMOTE_URI_TIMEOUT_PREF, 10);
     return new DFPFeed(baseFeedInfo, hub, messageService, sandboxFactory,
                        builtins.headers, builtins.footers,
-                       hiddenWindow.jQuery);
+                       webJsm.jQuery, timeout);
   };
 
   feedManager.registerPlugin(this);
 }
 
 function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
-                 headerSources, footerSources, jQuery) {
+                 headerSources, footerSources, jQuery, timeoutInterval) {
   if (LocalUriCodeSource.isValidUri(feedInfo.srcUri))
     this.canAutoUpdate = true;
 
   let codeSource;
   if (RemoteUriCodeSource.isValidUri(feedInfo.srcUri)) {
     if (feedInfo.canAutoUpdate) {
-      codeSource = new RemoteUriCodeSource(feedInfo);
+      codeSource = new RemoteUriCodeSource(feedInfo, timeoutInterval);
     } else
       codeSource = new StringCodeSource(feedInfo.getCode(),
                                         feedInfo.srcUri.spec);
@@ -277,18 +280,12 @@ function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
   this.__proto__ = feedInfo;
 }
 
-function makeBuiltinGlobalsMaker(msgService, hiddenWindow) {
+function makeBuiltinGlobalsMaker(msgService, webJsm) {
   var Cc = Components.classes;
   var Ci = Components.interfaces;
 
-  var uris = ["resource://ubiquity/scripts/jquery.js",
-              "resource://ubiquity/scripts/template.js"];
-
-  for (var i = 0; i < uris.length; i++) {
-    hiddenWindow.Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-                .getService(Components.interfaces.mozIJSSubScriptLoader)
-                .loadSubScript(uris[i]);
-  }
+  webJsm.importScript("resource://ubiquity/scripts/jquery.js");
+  webJsm.importScript("resource://ubiquity/scripts/template.js");
 
   var globalObjects = {};
 
@@ -299,11 +296,11 @@ function makeBuiltinGlobalsMaker(msgService, hiddenWindow) {
       globalObjects[id] = {};
 
     return {
-      XPathResult: hiddenWindow.XPathResult,
-      XMLHttpRequest: hiddenWindow.XMLHttpRequest,
-      jQuery: hiddenWindow.jQuery,
-      Template: hiddenWindow.TrimPath,
-      Application: hiddenWindow.Application,
+      XPathResult: webJsm.XPathResult,
+      XMLHttpRequest: webJsm.XMLHttpRequest,
+      jQuery: webJsm.jQuery,
+      Template: webJsm.TrimPath,
+      Application: webJsm.Application,
       Components: Components,
       feed: {id: codeSource.id,
              dom: codeSource.dom},

@@ -326,12 +326,23 @@ FMgrProto.installToWindow = function FMgr_installToWindow(window) {
     if (!(event.target.rel in self._plugins))
       return;
 
+    var pageUrl = event.target.baseURI;
+    var hashIndex = pageUrl.indexOf("#");
+    if (hashIndex != -1)
+      pageUrl = pageUrl.slice(0, hashIndex);
+
     onPageWithCommands(self._plugins[event.target.rel],
-                       event.target.baseURI,
+                       pageUrl,
                        event.target.href,
                        event.target.ownerDocument,
                        event.target.type);
   }
 
   window.addEventListener("DOMLinkAdded", onLinkAdded, false);
+
+  for (name in this._plugins) {
+    var plugin = this._plugins[name];
+    if (plugin.installToWindow)
+      plugin.installToWindow(window);
+  }
 };

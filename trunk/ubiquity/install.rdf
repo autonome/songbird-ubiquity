@@ -4,7 +4,7 @@
      xmlns:em="http://www.mozilla.org/2004/em-rdf#">
   <Description about="urn:mozilla:install-manifest">
     <em:id>ubiquity@labs.mozilla.com</em:id>
-    <em:version>0.1.5.20090206</em:version>
+    <em:version>0.1.6.20090219</em:version>
     <em:type>2</em:type>
 
     <!-- Target Application this extension can install into, 
@@ -22,7 +22,7 @@
       <Description>
         <em:id>songbird@songbirdnest.com</em:id>
         <em:minVersion>1.0.0</em:minVersion>
-        <em:maxVersion>1.1.1a</em:maxVersion>
+        <em:maxVersion>1.2.0a</em:maxVersion>
       </Description>
     </em:targetApplication>      
    
@@ -34,6 +34,7 @@
     <em:contributor>Dietrich Ayala - Songbird compatibility</em:contributor>
     <em:iconURL>chrome://ubiquity/skin/icons/ubiquity_logo_sb.png</em:iconURL>
     <em:homepageURL>http://wiki.mozilla.org/Labs/Ubiquity</em:homepageURL>
+    <em:updateURL>https://ubiquity.mozilla.com/xpi/%ITEM_VERSION%/update.rdf</em:updateURL>
     <em:optionsURL>chrome://ubiquity/content/preferences.xul</em:optionsURL>
   </Description>
 </RDF>

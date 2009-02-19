@@ -133,7 +133,7 @@ function makeFeedListElement(info, label, clickMaker) {
 }
 
 function onReady() {
-  $("#docs").attr("href", UbiquitySetup.getBaseUri() + "index.html");
+  $(".version").text(UbiquitySetup.version);
   PrefKeys.onLoad();
   let feedMgr = UbiquitySetup.createServices().feedManager;
 
@@ -158,7 +158,8 @@ function onReady() {
   if (!$("#command-feed-graveyard").text())
     $("#command-feed-graveyard-div").hide();
 
-  jQuery.get( "http://hg.toolness.com/ubiquity-firefox/rss-log", loadNews);
+  jQuery.get("http://ubiquity.mozilla.com/hg/ubiquity-firefox/rss-log",
+             loadNews);
 }
 
 function loadNews( data ) {
