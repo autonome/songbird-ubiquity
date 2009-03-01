@@ -3,7 +3,17 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 <script type="application/javascript;version=1.7">
 Components.utils.import("resource://ubiquity/modules/utils.js");
+var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
+                   .getService(Components.interfaces.nsIXULAppInfo);
+if(xulAppInfo.name == "Songbird"){
+var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
+                   .getService(Components.interfaces.nsIWindowMediator);
+var mainWindow = wm.getMostRecentWindow("Songbird:Main");
+mainWindow.getBrowser().addTab("about:ubiquity");
+}
+else{
 Application.activeWindow.open(Utils.url("about:ubiquity")).focus();
+}
 window.close();
 </script>
 </window>
