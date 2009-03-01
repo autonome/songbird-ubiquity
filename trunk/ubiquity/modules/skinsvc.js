@@ -292,9 +292,6 @@ SkinSvc.prototype.installToWindow = function installToWindow() {
 
   var self = this;
   var window = this._window;
-  
-  var xulAppInfo = Components.classes["@mozilla.org/xre/app-info;1"]
-                        .getService(Components.interfaces.nsIXULAppInfo);
 
   function showNotification(targetDoc, skinUrl, mimetype) {
 
@@ -302,12 +299,7 @@ SkinSvc.prototype.installToWindow = function installToWindow() {
     // through all the open windows and all the <browsers> in each.
     var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
              getService(Ci.nsIWindowMediator);
-    if(xulAppInfo.name == "Songbird"){
-    var enumerator = wm.getEnumerator("Songbird:Main");
-    }
-    else{
-    var enumerator = wm.getEnumerator("navigator:browser");
-    }
+    var enumerator = wm.getEnumerator(Utils.appWindowType);
     var tabbrowser = null;
     var foundBrowser = null;
 
