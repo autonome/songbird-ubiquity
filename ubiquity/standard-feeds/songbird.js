@@ -128,7 +128,10 @@ CmdUtils.CreateCommand({
 
 makeSearchCommand({
   name: "addons",
-  description: "addons",
+  description: "Search for Songbird Add-ons",
+  homepage: "http://geekshadow.com/",
+  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
+  license: "MPL/GPL/LGPL",  
   url: "http://addons.songbirdnest.com/search?query={QUERY}",
   icon: "http://www.getsongbird.com/favicon.ico",
   takes: {"your shout": noun_arb_text},
