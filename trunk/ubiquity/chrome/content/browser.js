@@ -63,15 +63,25 @@ function ubiquitySetup()
   jsm.UbiquitySetup.setupWindow(window);
 
   var nlParser = jsm.NLParser.makeParserForLanguage(
+    jsm.NLParser.ORIGINAL_SERIES,
     jsm.UbiquitySetup.languageCode,
     [],
     []
   );
 
+  var previewIframe = document.getElementById("cmd-preview");
+  var previewDoc = previewIframe.contentDocument;
+  var previewBlock = previewDoc.getElementById("ubiquity-preview");
+  var previewSuggs = previewDoc.getElementById("suggestions");
+  var previewPane = previewDoc.getElementById("preview-pane");
+  var previewHelp = previewDoc.getElementById("help");
 
   var cmdMan = new jsm.CommandManager(services.commandSource,
                                       services.messageService,
-                                      nlParser);
+                                      nlParser,
+                                      previewSuggs,
+                                      previewPane,
+                                      previewHelp);
 
   //Install skin detector
   var skinService = new jsm.SkinSvc(window);
@@ -99,10 +109,6 @@ function ubiquitySetup()
             .displayMessage("Loading your current skin failed." +
                             "The default skin will be loaded.");
   }
-
-  var previewIframe = document.getElementById("cmd-preview");
-  var previewBlock = previewIframe.contentDocument
-                     .getElementById("ubiquity-preview");
 
   function resizePreview() {
     previewIframe.height = previewIframe.contentDocument.height;
@@ -135,8 +141,7 @@ function ubiquitySetup()
   gUbiquity = new Ubiquity(
     document.getElementById("transparent-msg-panel"),
     document.getElementById("cmd-entry"),
-    cmdMan,
-    previewBlock
+    cmdMan
   );
   gUbiquity.setLocalizedDefaults(jsm.UbiquitySetup.languageCode);
 
@@ -151,14 +156,16 @@ function ubiquitySetup()
   // support per-pixel alpha transparency on.
   var xulr = Components.classes["@mozilla.org/xre/app-info;1"]
                      .getService(Components.interfaces.nsIXULRuntime);
-  if (xulr.OS == "Linux" && skinUrl == defaultSkinUrl)
+  if (xulr.OS == "Linux")
     document.getElementById("transparent-msg-panel")
             .style.backgroundColor = "#444";
-}
 
-function ubiquityTeardown()
-{
-  /* TODO: Remove event listeners. */
+  function ubiquityTeardown() {
+    window.removeEventListener("unload", ubiquityTeardown, false);
+    cmdMan.finalize();
+  }
+
+  window.addEventListener("unload", ubiquityTeardown, false);
 }
 
 function ubiquityKeydown(aEvent)
@@ -220,5 +227,4 @@ window.addEventListener(
   false
 );
 
-window.addEventListener("unload", ubiquityTeardown, false);
 window.addEventListener("keydown", ubiquityKeydown, true);

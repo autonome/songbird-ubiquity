@@ -41,6 +41,8 @@
 
 var EXPORTED_SYMBOLS = ["NounUtils"];
 
+Components.utils.import("resource://ubiquity/modules/utils.js");
+
 var NounUtils = {};
 
 NounUtils.NounType = function(name, expectedWords, defaultWord) {
@@ -90,7 +92,7 @@ NounUtils.NounType.prototype = {
   }
 };
 
-NounUtils.makeSugg = function( text, html, data ) {
+NounUtils.makeSugg = function( text, html, data, selectionIndices ) {
   if (typeof text != "string" && typeof html != "string" && !data) {
     // all inputs empty!  There is no suggestion to be made.
     return null;
@@ -101,19 +103,68 @@ NounUtils.makeSugg = function( text, html, data ) {
   if (suggestion.data && !suggestion.text)
     suggestion.text = suggestion.data.toString();
   if (suggestion.text && !suggestion.html)
-    suggestion.html = suggestion.text;
+    suggestion.html = Utils.escapeHtml(suggestion.text);
   if(suggestion.html && !suggestion.text)
+    // TODO: Any easy way to strip the text out of the HTML here? We
+    // don't have immediate access to any HTML DOM objects...
     suggestion.text = suggestion.html;
-    //TODO: Fix this.
-    //CmdUtils.getTextFromHtml(suggestion.html);
   // Create a summary of the text:
 
   var snippetLength = 35;
-  if( text.length > snippetLength ) {
-    suggestion.summary = text.substring(0, snippetLength-3) + "...";
-  } else {
-    suggestion.summary = suggestion.text;
-  }
+  var summary;
+  if( text && text.length > snippetLength )
+    summary = text.substring(0, snippetLength-1) + "\u2026";
+  else
+    summary = suggestion.text;
+
+  /* If the input comes all or in part from a text selection,
+   * we'll stick some html tags into the summary so that the part
+   * that comes from the text selection can be visually marked in
+   * the suggestion list.
+   */
+  if (selectionIndices) {
+    var pre = summary.slice(0, selectionIndices[0]);
+    var middle = summary.slice(selectionIndices[0],
+                               selectionIndices[1]);
+    var post = summary.slice(selectionIndices[1]);
+    summary = (Utils.escapeHtml(pre) +
+               "<span class='selection'>" +
+               Utils.escapeHtml(middle) +
+               "</span>" +
+               Utils.escapeHtml(post));
+  } else
+    summary = Utils.escapeHtml(summary);
+
+  suggestion.summary = summary;
 
   return suggestion;
+};
+
+// ** {{{ NounUtils.nounTypeFromRegExp() }}} **
+//
+// Creates a noun type from the given regular expression object
+// and returns it. The {{{data}}} attribute of the noun type is
+// the {{{match}}} object resulting from the regular expression
+// match.
+
+NounUtils.nounTypeFromRegExp = function nounTypeFromRegExp(regexp) {
+  var rankLast = false;
+  if (regexp.source == ".*")
+    rankLast = true;
+  var newNounType = {
+    // This will show up if the noun type is the target of a modifier.
+    _name: "text",
+    rankLast: rankLast,
+    suggest: function(text, html, callback, selectionIndices) {
+      var match = text.match(regexp);
+      if (match) {
+        var suggestion = NounUtils.makeSugg(text, html, match,
+                                            selectionIndices);
+        return [suggestion];
+      } else
+        return [];
+    }
+  };
+
+  return newNounType;
 };

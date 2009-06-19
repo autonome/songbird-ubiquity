@@ -10,33 +10,33 @@ var extApplication = { // helper method for correct quitting/restarting
       quit:    "browser.warnOnQuit"
     };
     if (!(event in prefs) || Application.prefs.getValue(prefs[event], true)) {
-      var os = Components.classes["@mozilla.org/observer-service;1"]
-                         .getService(Components.interfaces.nsIObserverService);
-      var cancelQuit = Components.classes["@mozilla.org/supports-PRBool;1"]
-                                 .createInstance(Components.interfaces.nsISupportsPRBool);
+      var os = Cc["@mozilla.org/observer-service;1"]
+               .getService(Ci.nsIObserverService);
+      var cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
+                       .createInstance(Ci.nsISupportsPRBool);
       os.notifyObservers(cancelQuit, "quit-application-requested", null);
       if (cancelQuit.data) return false; // somebody canceled our quit request
     } return true; // assume yes
   },
   _quitWithFlags: function app__quitWithFlags(aFlags, event) {
     if (this._warnOnClose(event)) {
-      var appStartup = Components.classes['@mozilla.org/toolkit/app-startup;1']
-                                 .getService(Components.interfaces.nsIAppStartup);
+      var appStartup = Cc['@mozilla.org/toolkit/app-startup;1']
+                                 .getService(Ci.nsIAppStartup);
       appStartup.quit(aFlags);
       return true;
     } return false;
   },
   quit: function app_quit() {
-    return this._quitWithFlags(Components.interfaces.nsIAppStartup.eAttemptQuit, "quit");
+    return this._quitWithFlags(Ci.nsIAppStartup.eAttemptQuit, "quit");
   },
   restart: function app_restart() {
-    return this._quitWithFlags(Components.interfaces.nsIAppStartup.eAttemptQuit |
-                               Components.interfaces.nsIAppStartup.eRestart, "restart");
+    return this._quitWithFlags(Ci.nsIAppStartup.eAttemptQuit |
+                               Ci.nsIAppStartup.eRestart, "restart");
   },
   close: function app_close() {
     if (this._warnOnClose("close")) {
-      Components.classes["@mozilla.org/appshell/window-mediator;1"]
-                .getService(Components.interfaces.nsIWindowMediator)
+      Cc["@mozilla.org/appshell/window-mediator;1"]
+                .getService(Ci.nsIWindowMediator)
                 .getMostRecentWindow(null)
                 .close();
       return true;
@@ -183,7 +183,7 @@ CmdUtils.CreateCommand({
       var numTabs = 0;
 
       Application.activeWindow.tabs.forEach(function(tab) {
-        if (tab.uri.spec.toLowerCase().match(relatedWord) || 
+        if (tab.uri.spec.toLowerCase().match(relatedWord) ||
             tab.document.title.toLowerCase().match(relatedWord)) {
       	  html += "<li>" + tab.document.title + "</li>";
       	  numTabs++;
@@ -210,7 +210,7 @@ CmdUtils.CreateCommand({
     var numTabs = 0;
 
     Application.activeWindow.tabs.forEach(function(tab) {
-      if (tab.uri.spec.toLowerCase().match(relatedWord) || 
+      if (tab.uri.spec.toLowerCase().match(relatedWord) ||
           tab.document.title.toLowerCase().match(relatedWord)) {
         tab.close();
         numTabs++;
@@ -356,12 +356,12 @@ CmdUtils.CreateCommand({
 
 function setFullPageZoom(level) {
   var navigator1 = window.
-                   QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                   getInterface(Components.interfaces.nsIWebNavigation);
-  var docShell = navigator1.QueryInterface(Components.interfaces.nsIDocShell);
+                   QueryInterface(Ci.nsIInterfaceRequestor).
+                   getInterface(Ci.nsIWebNavigation);
+  var docShell = navigator1.QueryInterface(Ci.nsIDocShell);
   var docviewer = docShell.
                   contentViewer.
-                  QueryInterface(Components.interfaces.nsIMarkupDocumentViewer);
+                  QueryInterface(Ci.nsIMarkupDocumentViewer);
   docviewer.fullZoom = level;
 }
 
@@ -371,11 +371,11 @@ CmdUtils.CreateCommand({
   icon: "chrome://ubiquity/skin/icons/magnifier.png",
   description: "Zooms the Firefox window in or out.",
   preview: function(pBlock, directObj) {
-    var replacement = "a given percentage"; 
+    var replacement = "a given percentage";
     if (directObj.text) {
       replacement = directObj.text;
     }
-    pBlock.innerHTML = "Zooms the Firefox window to " + replacement 
+    pBlock.innerHTML = "Zooms the Firefox window to " + replacement
                        + " of its normal size.";
   },
   execute: function(directObj) {
@@ -411,12 +411,11 @@ CmdUtils.CreateCommand({
   icon: "chrome://mozapps/skin/places/tagContainerIcon.png",
   description: "Adds a tag to describe the current page",
   preview: function(aEl, aTagsString) {
-    aEl.innerHTML = "Describe the current page with tags"
-                  + aTagsString.text.length ? " (" + aTagsString.text + ")" : ".";
+    aEl.innerHTML = ("Describe the current page with tags" +
+                     (aTagsString.text.length ? " (" +
+                      aTagsString.text + ")" : "."));
   },
   execute: function(aTagsString) {
-    var Cc = Components.classes;
-    var Ci = Components.interfaces;
     var recentWindow = Utils.currentChromeWindow;
     var doc = recentWindow.content.document;
     if (!doc)
@@ -451,103 +450,13 @@ CmdUtils.CreateCommand({
   }
 });
 
-
-
-// -----------------------------------------------------------------
-// BUG REPORT COMMANDS
-// -----------------------------------------------------------------
-
-
-function _getExtensionInfo(Application) {
-  var extensions = {};
-  Application.extensions.all.forEach(function(ext) {
-    extensions[ext.name] = {
-      version:  ext.version,
-      firstRun: ext.firstRun,
-      enabled:  ext._enabled
-    };
-  });
-  return extensions;
-}
-
-function _getBrowserInfo(Application) {
-  var numTabs = 0;
-  Application.windows.forEach(function(win) {
-    numTabs += win.tabs.length;
-  });
-
-  var nav = CmdUtils.getWindow().navigator;
-
-  return {
-    name:            Application.name,
-    version:         Application.version,
-    numberOfWindows: Application.windows.length,
-    numberOfTabs:    numTabs,
-    cookieEnabled:   nav.cookieEnabled,
-    language:        nav.language,
-    buildID:         nav.buildID
-  };
-}
-
-function _getOSInfo() {
-  var hostJS = CmdUtils.getWindow().navigator;
-
-  return {
-    oscpu:    hostJS.oscpu,
-    platform: hostJS.platform
-  };
-}
-
-function _getPluginInfo() {
-  var plugins = [];
-  var hostJS = CmdUtils.getWindow().navigator;
-  for (var i=0; i < hostJS.plugins.length; i++) {
-    plugins.push({
-      name: hostJS.plugins[i].name,
-      //description: hostJS.plugins[i].description,
-      filename: hostJS.plugins[i].filename
-    });
-  }
-  return plugins;
-}
-
-function _getErrorInfo() {
-  var consoleService = Components.
-                       classes["@mozilla.org/consoleservice;1"].
-                       getService(Components.interfaces.nsIConsoleService);
-
-  // Get the last five errors
-  var errors = {};
-  var count = {};
-  consoleService.getMessageArray(errors, count);
-  errors = errors.value.slice(-5);
-
-  var errorList = [];
-  errors.forEach(function(error) {
-    errorList.push(error.message);
-  });
-
-  return errorList;
-}
-
 // TODO: Move this to developer.js on the next release of Ubiq.
 // I'm leaving it here so that it gets pushed out to users
 // now. -Aza
 CmdUtils.CreateCommand({
   name: "report-bug",
-  description: "Inserts Ubiquity debug information at the cursor. "
-             + "Use it when reporting bugs.",
-  _getDebugInfo: function(Application) {
-    return {
-      browser:    _getBrowserInfo(Application),
-      extensions: _getExtensionInfo(Application),
-      plugins:    _getPluginInfo(),
-      os:         _getOSInfo(),
-      errors:     _getErrorInfo()
-    };
-  },
+  description: "Reports a Ubiquity bug.",
   execute: function() {
-    var debug = this._getDebugInfo(Application);
-    CmdUtils.setSelection(Utils.encodeJson(debug));
+    Utils.openUrlInBrowser("chrome://ubiquity/content/report-bug.html");
   }
 });

@@ -38,65 +38,77 @@
  * ***** END LICENSE BLOCK ***** */
 
 Components.utils.import("resource://ubiquity/modules/setup.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
+
+var escapeHtml = Utils.escapeHtml;
 
 function onDocumentLoad() {
   function updateCommands() {
     var cmdSource = UbiquitySetup.createServices().commandSource;
 
-    // Dynamically generate entries for undocumented commands.
-    var cmdsChanged = false;
     var cmdList = $('#command-list');
     cmdList.find('.activebox').unbind('change');
     for (var i = 0; i < cmdSource.commandNames.length; i++) {
       var cmd = cmdSource.getCommand(cmdSource.commandNames[i].name);
-      var cmdId = cmdSource.commandNames[i].id.replace(/ /g, "_");
       var isEnabled = !cmd.disabled;
 
-      if (cmdList.find('#' + cmdId).length == 0) {
-        cmdsChanged = true;
-        cmdList.append(
-          '<li class="command" id="' + cmdId + '">' +
-           '<input type="checkbox" class="activebox"' +
-           (isEnabled ? ' checked="checked"' : '')+'/>'+
-           '<span class="name">' + cmd.name + '</span>' +
-           '<span class="description"/>' +
-           '<div class="synonyms-container light">also called <span class="synonyms"/></div>' +
-           '<div class="light"><span class="author"/><span class="license"/></div>' +
-           '<div class="homepage light"/>' +
-           '<div class="help"/>' +
-           '</li>'
-        );
+      var cmdElement = jQuery(
+        '<li class="command">' +
+          '<input type="checkbox" class="activebox"' +
+          (isEnabled ? ' checked="checked"' : '')+'/>'+
+          '<span class="name">' + escapeHtml(cmd.name) + '</span>' +
+          '<span class="description"/>' +
+          '<div class="synonyms-container light">also called ' +
+          '<span class="synonyms"/></div>' +
+          '<div class="light"><span class="author"/>' +
+          '<span class="license"/></div>' +
+          '<div class="homepage light"/>' +
+          '<div class="help"/>' +
+          '</li>'
+      );
 
-        var cmdElement = cmdList.find('#' + cmdId);
-
-        if(cmd.icon) {
-          cmdElement.css('list-style-image', "url('" + cmd.icon + "')");
-        } else {
-          cmdElement.css('list-style-type', 'none');
-        }
-        if(cmd.homepage) {
-          cmdElement.find(".homepage").html(
-            'View more information at <a href="' + cmd.homepage + '">' + cmd.homepage + '</a>.'
-          );
-        } else cmdElement.find(".homepage").empty();
-        
-        if(cmd.synonyms){
-          cmdElement.find(".synonyms").html(cmd.synonyms.join(", "));
-        } else cmdElement.find(".synonyms-container").empty();
-        
-        if(cmd.description) cmdElement.find(".description").html(cmd.description);
-        else cmdElement.find(".description").empty();
-
-        if(cmd.author) cmdElement.find(".author").html(formatCommandAuthor(cmd.author));
-        else cmdElement.find(".author").empty();
-
-        if(cmd.license) cmdElement.find(".license").html(' - licensed as ' + cmd.license);
-        else cmdElement.find(".license").empty();
-
-        if(cmd.help) cmdElement.find(".help").html(cmd.help);
-        else cmdElement.find(".help").empty();
-
+      if(cmd.icon) {
+        // TODO: Is this how we escape inside a url() in CSS?
+        cmdElement.css('list-style-image', "url('" +
+                       escapeHtml(cmd.icon) + "')");
+      } else {
+        cmdElement.css('list-style-type', 'none');
       }
+      if(cmd.homepage) {
+        cmdElement.find(".homepage").html(
+          ('View more information at <a href="' +
+           escapeHtml(cmd.homepage) + '">' +
+           escapeHtml(cmd.homepage) + '</a>.')
+        );
+      } else cmdElement.find(".homepage").empty();
+
+      if(cmd.synonyms){
+        cmdElement.find(".synonyms").html(
+          escapeHtml(cmd.synonyms.join(", "))
+        );
+      } else cmdElement.find(".synonyms-container").empty();
+
+      if(cmd.description) cmdElement.find(".description").html(
+        cmd.description
+      );
+      else cmdElement.find(".description").empty();
+
+      if(cmd.author) cmdElement.find(".author").html(
+        formatCommandAuthor(cmd.author)
+      );
+
+      else cmdElement.find(".author").empty();
+
+      if(cmd.license) cmdElement.find(".license").html(
+        escapeHtml(' - licensed as ' + cmd.license)
+      );
+      else cmdElement.find(".license").empty();
+
+      if(cmd.help) cmdElement.find(".help").html(cmd.help);
+
+      else cmdElement.find(".help").empty();
+
+      cmdList.append(cmdElement);
     }
 
     // TODO: Remove any entries that no longer exist.
@@ -140,19 +152,18 @@ function formatCommandAuthor(authorData) {
 
   var authorMarkup = '';
   if(authorData.name && !authorData.email) {
-    authorMarkup += authorData.name + " ";
+    authorMarkup += escapeHtml(authorData.name) + " ";
   } else if(authorData.name && authorData.email) {
-    authorMarkup += '<a href="mailto:' + authorData.email + '">' +
-      authorData.name +
-      '</a> ';
+    authorMarkup += ('<a href="mailto:' + escapeHtml(authorData.email) +
+                     '">' + escapeHtml(authorData.name) + '</a> ');
   } else if(!authorData.name && authorData.email) {
-    authorMarkup += '<a href="mailto:' + authorData.email + '">' +
-      authorData.email +
-      '</a> ';
+    authorMarkup += ('<a href="mailto:' + escapeHtml(authorData.email) +
+                     '">' + escapeHtml(authorData.email) + '</a> ');
   }
 
   if(authorData.homepage) {
-    authorMarkup += '[<a href="' + authorData.homepage + '">Homepage</a>]';
+    authorMarkup += ('[<a href="' + escapeHtml(authorData.homepage) +
+                     '">Homepage</a>]');
   }
 
   if(authorMarkup.length == 0)

@@ -39,15 +39,23 @@
 EXPORTED_SYMBOLS = ["NLParser"];
 
 Components.utils.import("resource://ubiquity/modules/suggestion_memory.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
 
-var NLParser = { MAX_SUGGESTIONS: 5};
+var NLParser = { ORIGINAL_SERIES: 0,
+                 NEXT_GENERATION: 1};
 
-NLParser.makeParserForLanguage = function(languageCode, verbList, nounList,
+NLParser.makeParserForLanguage = function(parserVersion,
+                                          languageCode, verbList, nounList,
                                           ContextUtils, suggestionMemory) {
-  let parserPlugin = NLParser.getPluginForLanguage(languageCode);
 
-  return new NLParser.Parser(verbList, nounList, parserPlugin, ContextUtils,
-                             suggestionMemory);
+  if (parserVersion == NLParser.ORIGINAL_SERIES) {
+    let parserPlugin = NLParser.getPluginForLanguage(languageCode);
+
+    return new NLParser.Parser(verbList, nounList, parserPlugin, ContextUtils,
+                               suggestionMemory);
+  } else if (parserVersion == NLParser.NEXT_GENERATION) {
+    throw "Not yet implemented.";
+  }
 };
 
 (function() {
@@ -62,68 +70,78 @@ NLParser.makeParserForLanguage = function(languageCode, verbList, nounList,
    };
 })();
 
-NLParser.Parser = function(verbList, nounList, languagePlugin,
-                           ContextUtils, suggestionMemory) {
-  this.setCommandList( verbList );
-  this._nounTypeList = nounList;
-  this._suggestionList = []; // a list of ParsedSentences.
-  this._parsingsList = []; // a list of PartiallyParsedSentences.
-  this._languagePlugin = languagePlugin;
-
-  if (!ContextUtils) {
-    var ctu = {};
-    Components.utils.import("resource://ubiquity/modules/contextutils.js",
-                            ctu);
-    ContextUtils = ctu.ContextUtils;
-  }
-  this._ContextUtils = ContextUtils;
-
-  if (!suggestionMemory) {
-    var sm = {};
-    Components.utils.import("resource://ubiquity/modules/suggestion_memory.js",
-                            sm);
-    suggestionMemory = new sm.SuggestionMemory("main_parser");
-  }
-  this._suggestionMemory = suggestionMemory;
-  this._sortGenericVerbCache();
+/* ParserQuery: An object that wraps a request to the parser for suggestions
+ * based on a given query string.  Multiple ParserQueries may be in action at
+ * a single time; each is independent.  A ParserQuery can execute
+ * asynchronously, producing a suggestion list that changes over time as the
+ * results of network calls come in.
+ */
+NLParser.ParserQuery = function(parser, queryString, context, maxSuggestions) {
+  this._init(parser, queryString, context, maxSuggestions);
 };
+NLParser.ParserQuery.prototype = {
+  _init: function(parser, queryString, context, maxSuggestions) {
+    this._parser = parser;
+    this._suggestionList = [];
+    this._outstandingRequests = [];
+    this.onResults = null;
+    this._queryString = queryString;
+    this._context = context;
+    this._maxSuggestions = maxSuggestions;
 
-NLParser.Parser.prototype = {
-  getSelectionObject: function(context) {
-    var selection = this._ContextUtils.getSelection(context);
-    var htmlSelection = this._ContextUtils.getHtmlSelection(context);
-    if (!htmlSelection && selection)
-      htmlSelection = selection;
-    return {
-      text: selection,
-      html: htmlSelection
-    };
+    // temporary
+    this._parsingsList = [];
   },
 
-  nounFirstSuggestions: function( selObj, callback ) {
-    let suggs = [];
-    let topGenerics = this._rankedVerbsThatUseGenericNouns
-                          .slice(0, NLParser.MAX_SUGGESTIONS);
-    let verbsToTry = this._verbsThatUseSpecificNouns.concat( topGenerics );
-    for each(verb in verbsToTry) {
-      let newPPS = new NLParser.PartiallyParsedSentence( verb,
-                                                         {},
-                                                         selObj,
-                                                         0,
-                                                         this._languagePlugin,
-                                                         callback );
-      // TODO make a better way of having the parsing remember its source than
-      // this encapsulation breaking...
-      newPPS._cameFromNounFirstSuggestion = true;
-      suggs.push( newPPS );
+  // TODO: Does query need some kind of destructor?  If this has a ref to the
+  // partiallyParsedSentences and they have a ref back here, it may be a self-
+  // perpetuating cycle that doesn't get GCed.  Investigate.
+
+  // Client code should set onResults to a function!!
+
+  cancel: function() {
+    for (let x = 0; x < this._outstandingRequests.length; x++) {
+      // TODO implement something like:
+      // this._outstandingRequets[x].cancel();
     }
-
-    return suggs;
   },
 
-  _sortSuggestionList: function(query) {
+  // Read-only properties:
+  get finished() { return this._outstandingRequests.length == 0; },
+  get hasResults() { return this._suggestionList.length > 0; },
+  get suggestionList() { return this._suggestionList; },
+
+  // The handler that makes this a listener for partiallyParsedSentences.
+  onNewParseGenerated: function() {
+    this._refreshSuggestionList();
+    if (this.onResults) {
+      this.onResults( this._suggestionList, this.finished );
+    }
+  },
+
+  // This method should be called by parser code only, not client code.
+  _addPartiallyParsedSentence: function( partiallyParsedSentence ) {
+    partiallyParsedSentence.addListener( this );
+    this._parsingsList.push( partiallyParsedSentence );
+  },
+
+  // Internal methods:
+  _refreshSuggestionList: function() {
+    // get completions from parsings -- the completions may have changed
+    // since the parsing list was first generated.
+    this._suggestionList = [];
+    for each (let parsing in this._parsingsList) {
+      let newSuggs = parsing.getParsedSentences();
+      this._suggestionList = this._suggestionList.concat(newSuggs);
+    }
+    // Sort and take the top maxSuggestions number of suggestions
+    this._sortSuggestionList();
+    this._suggestionList = this._suggestionList.slice(0, this._maxSuggestions);
+  },
+
+  _sortSuggestionList: function() {
     // TODO the following is no good, it's English-specific:
-    let inputVerb = query.split(" ")[0];
+    let inputVerb = this._queryString.split(" ")[0];
     /* Each suggestion in the suggestion list should already have a matchScore
        assigned by Verb.getCompletions.  Give them also a frequencyScore based
        on the suggestionMemory:*/
@@ -131,9 +149,10 @@ NLParser.Parser.prototype = {
       let suggVerb = sugg._verb._name;
       let freqScore = 0;
       if (sugg._cameFromNounFirstSuggestion) {
-        freqScore = this._suggestionMemory.getScore("", suggVerb);
+        // TODO suggestion memory belongs to the parser...
+        freqScore = this._parser.getSuggestionMemoryScore("", suggVerb);
       } else {
-	freqScore = this._suggestionMemory.getScore(inputVerb, suggVerb);
+	freqScore = this._parser.getSuggestionMemoryScore(inputVerb, suggVerb);
       }
       sugg.setFrequencyScore(freqScore);
     }
@@ -156,6 +175,68 @@ NLParser.Parser.prototype = {
       // no tiebreaker... they are truly tied.
       return 0;
     });
+
+  }
+
+};
+
+NLParser.Parser = function(verbList, nounList, languagePlugin,
+                           ContextUtils, suggestionMemory) {
+  this.setCommandList( verbList );
+  this._nounTypeList = nounList;
+  this._languagePlugin = languagePlugin;
+
+  if (!ContextUtils) {
+    var ctu = {};
+    Components.utils.import("resource://ubiquity/modules/contextutils.js",
+                            ctu);
+    ContextUtils = ctu.ContextUtils;
+  }
+  this._ContextUtils = ContextUtils;
+
+  if (!suggestionMemory) {
+    var sm = {};
+    Components.utils.import("resource://ubiquity/modules/suggestion_memory.js",
+                            sm);
+    suggestionMemory = new sm.SuggestionMemory("main_parser");
+  }
+  this._suggestionMemory = suggestionMemory;
+  this._sortGenericVerbCache();
+};
+
+NLParser.Parser.prototype = {
+
+  // TODO why is this function here?
+  getSelectionObject: function(context) {
+    var selection = this._ContextUtils.getSelection(context);
+    var htmlSelection = this._ContextUtils.getHtmlSelection(context);
+    if (!htmlSelection && selection)
+      htmlSelection = selection;
+    return {
+      text: selection,
+      html: htmlSelection
+    };
+  },
+
+  _nounFirstSuggestions: function( selObj, maxSuggestions ) {
+    let suggs = [];
+    let topGenerics = this._rankedVerbsThatUseGenericNouns
+                          .slice(0, maxSuggestions);
+    let verbsToTry = this._verbsThatUseSpecificNouns.concat( topGenerics );
+    for each(verb in verbsToTry) {
+      let newPPS = new NLParser.PartiallyParsedSentence( verb,
+                                                         {},
+                                                         selObj,
+                                                         0,
+                                                         this._languagePlugin );
+      // TODO make a better way of having the parsing remember its source than
+      // this encapsulation breaking...
+      newPPS._cameFromNounFirstSuggestion = true;
+      suggs.push( newPPS );
+    }
+    dump("nounFirstSuggestions returning suggestions.\n");
+
+    return suggs;
   },
 
   strengthenMemory: function(query, chosenSuggestion) {
@@ -174,14 +255,25 @@ NLParser.Parser.prototype = {
     }
   },
 
-  updateSuggestionList: function( query, context, asyncSuggestionCb ) {
+  getSuggestionMemoryScore: function(inputVerb, suggestedVerb) {
+    return this._suggestionMemory.getScore(inputVerb, suggestedVerb);
+  },
+
+  // TODO reset is gone
+
+  newQuery: function( query, context, maxSuggestions ) {
+    var theNewQuery = new NLParser.ParserQuery(this,
+                                               query,
+                                               context,
+                                               maxSuggestions);
     var nounType, verb;
     var newSuggs = [];
     var selObj = this.getSelectionObject(context);
     // selection, no input, noun-first suggestion on selection
     if (!query || query.length == 0) {
       if (selObj.text || selObj.html) {
-        let nounSuggs =  this.nounFirstSuggestions(selObj, asyncSuggestionCb);
+        let nounSuggs =  this._nounFirstSuggestions(selObj,
+                                                    maxSuggestions);
         newSuggs = newSuggs.concat(nounSuggs);
       }
     } else {
@@ -190,8 +282,7 @@ NLParser.Parser.prototype = {
         query,
         this._nounTypeList,
         this._verbList,
-        selObj,
-        asyncSuggestionCb
+        selObj
       );
       // noun-first matches on input
       if (newSuggs.length == 0 ) {
@@ -199,50 +290,34 @@ NLParser.Parser.prototype = {
           text: query,
           html: query
         };
-        let nounSuggs = this.nounFirstSuggestions(selObj, asyncSuggestionCb);
+        let nounSuggs = this._nounFirstSuggestions(selObj,
+                                                   maxSuggestions);
         newSuggs = newSuggs.concat(nounSuggs);
       }
     }
+
     // partials is now a list of PartiallyParsedSentences; if there's a
     // selection, try using it for any missing arguments...
     if (selObj.text || selObj.html) {
-      let partialsWithSelection = [];
       for each(part in newSuggs) {
         let withSel = part.getAlternateSelectionInterpolations();
-        partialsWithSelection = partialsWithSelection.concat( withSel );
+        for each( let sugg in withSel ) {
+          theNewQuery._addPartiallyParsedSentence( sugg );
+        }
       }
-      this._parsingsList = partialsWithSelection;
     } else {
-      this._parsingsList = newSuggs;
+      for each( let sugg in newSuggs ) {
+        theNewQuery._addPartiallyParsedSentence( sugg );
+      }
     }
+    theNewQuery._refreshSuggestionList();
 
-    this.refreshSuggestionList( query, context );
+    return theNewQuery;
   },
 
-  refreshSuggestionList: function( query ) {
-    // get completions from parsings -- the completions may have changed
-    // since the parsing list was first generated.
-    this._suggestionList = [];
-    for each (let parsing in this._parsingsList) {
-      let newSuggs = parsing.getParsedSentences();
-      this._suggestionList = this._suggestionList.concat(newSuggs);
-    }
-    this._sortSuggestionList(query);
-  },
-
-  getSuggestionList: function() {
-    return this._suggestionList;
-  },
-
-  getNumSuggestions: function() {
-    return Math.min(NLParser.MAX_SUGGESTIONS, this._suggestionList.length);
-  },
-
-  getSentence: function(index) {
-    if (this._suggestionList.length == 0 )
-      return null;
-    return this._suggestionList[index];
-  },
+  // TODO instead of getSuggestionList, use query.suggestionList.
+  // instead of getNumSuggestions, use query.suggestionList.length.
+  // instead of getSentence, use query.suggestionList[index].
 
   setCommandList: function( commandList ) {
     this._verbList = [ new NLParser.Verb( commandList[x] )
@@ -354,7 +429,7 @@ NLParser.ParsedSentence.prototype = {
 
   getDisplayText: function() {
     // returns html formatted sentence for display in suggestion list
-    let sentence = this._verb._name;
+    let sentence = Utils.escapeHtml(this._verb._name);
     let label;
     for ( var x in this._verb._arguments ) {
       if ( this._argSuggs[ x ] && (this._argSuggs[x].text != "") ) {
@@ -362,15 +437,16 @@ NLParser.ParsedSentence.prototype = {
           label = "";
         else
           label = x;
-        sentence = sentence + " <b>" + label + " " + this._argSuggs[x].summary +
-                   "</b>";
+        sentence += (" <b>" + Utils.escapeHtml(label) + " " +
+                     this._argSuggs[x].summary + "</b>");
       } else {
         if (x == "direct_object") {
           label = this._verb._arguments[x].label;
         } else {
           label = x + " " + this._verb._arguments[x].type._name;
         }
-        sentence = sentence + " <span class=\"needarg\">(" + label + ")</span>";
+        sentence += (" <span class=\"needarg\">(" +
+                     Utils.escapeHtml(label) + ")</span>");
       }
     }
     return sentence;
@@ -390,6 +466,10 @@ NLParser.ParsedSentence.prototype = {
 
   get previewDelay() {
     return this._verb.previewDelay;
+  },
+
+  get previewUrl() {
+    return this._verb.previewUrl;
   },
 
   copy: function() {
@@ -511,8 +591,7 @@ NLParser.ParsedSentence.prototype = {
 };
 
 NLParser.PartiallyParsedSentence = function(verb, argStrings, selObj,
-                                            matchScore, parserPlugin,
-                                            asyncSuggestionCb) {
+                                            matchScore, parserPlugin) {
   /*This is a partially parsed sentence.
    * What that means is that we've decided what the verb is,
    * and we've assigned all the words of the input to one of the arguments.
@@ -522,7 +601,7 @@ NLParser.PartiallyParsedSentence = function(verb, argStrings, selObj,
    * sentences can produce several completely-parsed sentences, in which
    * final values for all arguments are specified.
    */
-  this._asyncSuggestionCb = asyncSuggestionCb;
+  this._listeners = [];
   this._parserPlugin = parserPlugin;
   this._verb = verb;
   this._argStrings = argStrings;
@@ -563,6 +642,13 @@ NLParser.PartiallyParsedSentence = function(verb, argStrings, selObj,
 };
 
 NLParser.PartiallyParsedSentence.prototype = {
+  addListener: function(listener) {
+    // Listener must be an object with an onNewParseGenerated function.
+    // onNewParseGenerated will be called whenever new parsings are
+    // asynchronously generated.
+    this._listeners.push( listener );
+  },
+
   _argSuggest: function(argName, text, html, selectionIndices) {
     /* For the given argument of the verb, sends (text,html) to the nounType
      * gets back suggestions for the argument, and adds each suggestion.
@@ -579,9 +665,10 @@ NLParser.PartiallyParsedSentence.prototype = {
         } else {
            self.addArgumentSuggestion(argName, newSugg);
         }
-        // Call our asynchronous suggestion callback.
-        if (self._asyncSuggestionCb)
-          self._asyncSuggestionCb();
+        // Notify our listeners!!
+        for (let i = 0; i < self._listeners.length; i++) {
+          self._listeners[i].onNewParseGenerated();
+        }
       };
       // This is where the suggestion is actually built.
       let suggestions = argument.type.suggest(text, html, callback,
@@ -701,11 +788,10 @@ NLParser.PartiallyParsedSentence.prototype = {
     // Deep copy constructor
     let newPPSentence = new NLParser.PartiallyParsedSentence(
         this._verb,
-				{},
-	      this._selObj,
-	      this._matchScore,
-	      this._parserPlugin,
-        this._asyncSuggestionCb
+        {},
+        this._selObj,
+        this._matchScore,
+        this._parserPlugin
     );
     newPPSentence._parsedSentences = [];
     for each(let parsedSen in this._parsedSentences) {
@@ -721,6 +807,9 @@ NLParser.PartiallyParsedSentence.prototype = {
     newPPSentence._validArgs = {};
     for (let validArg in this._validArgs) {
       newPPSentence._validArgs[validArg] = this._validArgs[validArg];
+    }
+    for each(let listener in this._listeners) {
+      newPPSentence.addListener(listener);
     }
     return newPPSentence;
   },
@@ -796,6 +885,9 @@ NLParser.Verb.prototype = {
     this.__defineGetter__("previewDelay", function() {
       return cmd.previewDelay;
     });
+    this.__defineGetter__("previewUrl", function() {
+      return cmd.previewUrl ? cmd.previewUrl : null;
+    });
     this.__defineGetter__("disabled", function() {
       if("disabled" in cmd)
         return cmd.disabled;
@@ -860,7 +952,7 @@ NLParser.Verb.prototype = {
       // Command exists, but has no preview; provide a default one.
       var template = "";
       if (this._description)
-        template += "<h2>The <em>"+this._name+"</em> command</h2><p>"+this._description+"</p>";
+        template += "<p>"+this._description+"</p>";
       if (this._help)
         template += "<h3>How to use it:</h3><p>"+this._help+"</p>";
       // No description or help available, fall back to old defualt

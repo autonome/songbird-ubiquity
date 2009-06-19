@@ -24,6 +24,7 @@
  *   Maria Emerson <memerson@mozilla.com>
  *   Blair McBride <unfocused@gmail.com>
  *   Abimanyu Raja <abimanyuraja@gmail.com>
+ *   Christian Sonne <cers@geeksbynature.dk>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -97,7 +98,7 @@ CmdUtils.log = function log(what) {
   }
 };
 
-// ** {{{ CmdUtils.getHtmlSelection( context ) }}} **
+// ** {{{ CmdUtils.getHtmlSelection(context) }}} **
 //
 // Returns a string containing the the html representation of the
 // user's current selection, i.e. text including tags.
@@ -116,7 +117,7 @@ CmdUtils.getHtmlSelection = function getHtmlSelection(context) {
   return ctu.ContextUtils.getHtmlSelection(context);
 };
 
-// ** {{{ CmdUtils.getSelection( context ) }}} **
+// ** {{{ CmdUtils.getSelection(context) }}} **
 //
 // Returns a string containing the text and just the text of the user's
 // current selection, i.e. with html tags stripped out.
@@ -136,21 +137,7 @@ CmdUtils.getSelection = function getSelection(context) {
   return ctu.ContextUtils.getSelection(context);
 };
 
-// ** {{{ CmdUtils.getTextFromHtml( html ) }}} **
-//
-// Strips out all HTML tags from a chunk of html and returns the text
-// that's left.
-//
-// {{{html}}} is a string containing an html fragment.
-
-CmdUtils.getTextFromHtml = function getTextFromHtml(html) {
-  var newNode = context.focusedWindow.document.createElement("p");
-  newNode.innerHTML = html;
-  return newNode.textContent;
-}
-
-
-// ** {{{ CmdUtils.setSelection( content, options ) }}} **
+// ** {{{ CmdUtils.setSelection(content, options) }}} **
 //
 // Replaces the current selection with new content.
 // See {{{ ContextUtils.setSelection }}}
@@ -172,7 +159,7 @@ CmdUtils.setSelection = function setSelection(content, options) {
 };
 
 
-// ** {{{ CmdUtils.getDocument( ) }}} **
+// ** {{{ CmdUtils.getDocument() }}} **
 //
 // This gets the document of the current tab in a secure way
 
@@ -181,7 +168,7 @@ CmdUtils.getDocument = function getDocument(){
 };
 
 
-// ** {{{ CmdUtils.getWindow( ) }}} **
+// ** {{{ CmdUtils.getWindow() }}} **
 //
 // This gets the window object of the current tab in a secure way.
 
@@ -193,7 +180,7 @@ CmdUtils.getWindow = function getWindow() {
 };
 
 
-// ** {{{ CmdUtis.getWindowInsecure( ) }}} **
+// ** {{{ CmdUtis.getWindowInsecure() }}} **
 //
 // This gets the window object of the current tab, without the
 // safe XPCNativeWrapper. While this allows access to scripts in the content,
@@ -209,7 +196,7 @@ CmdUtils.getWindowInsecure = function getWindowInsecure() {
 };
 
 
-// ** {{{ CmdUtis.getDocumentInsecure( ) }}} **
+// ** {{{ CmdUtis.getDocumentInsecure() }}} **
 //
 // This gets the document of the current tab, without the
 // safe XPCNativeWrapper. While this allows access to scripts in the content,
@@ -221,7 +208,7 @@ CmdUtils.getDocumentInsecure = function getDocumentInsecure() {
 };
 
 
-// ** {{{ CmdUtils.geocodeAddress( address, callback ) }}} **
+// ** {{{ CmdUtils.geocodeAddress(address, callback) }}} **
 //
 // This function uses the Yahoo geocoding service to take a text
 // string of an address/location and turn it into a structured
@@ -272,7 +259,7 @@ CmdUtils.geocodeAddress = function geocodeAddress( address, callback ) {
 }
 
 
-// ** {{{ CmdUtils.injectCss( css ) }}} **
+// ** {{{ CmdUtils.injectCss(css) }}} **
 //
 // Injects CSS source code into the current tab's document.
 //
@@ -286,7 +273,7 @@ CmdUtils.injectCss = function injectCss(css) {
 };
 
 
-// ** {{{ CmdUtils.injectHTML( html ) }}} **
+// ** {{{ CmdUtils.injectHTML(html) }}} **
 //
 // Injects HTML source code into the current tab's document,
 // at the end of the document.
@@ -301,7 +288,7 @@ CmdUtils.injectHtml = function injectHtml( html ) {
 };
 
 
-// ** {{{ CmdUtils.copyToClipboard( text ) }}} **
+// ** {{{ CmdUtils.copyToClipboard(text) }}} **
 //
 // This function places the passed-in text into the OS's clipboard.
 //
@@ -323,7 +310,7 @@ CmdUtils.copyToClipboard = function copyToClipboard(text){
 }
 
 
-// ** {{{ CmdUtils.injectJavascript( src, callback ) }}} **
+// ** {{{ CmdUtils.injectJavascript(src, callback) }}} **
 //
 // Injects Javascript from a URL into the current tab's document,
 // and calls an optional callback function once the script has loaded.
@@ -352,7 +339,7 @@ CmdUtils.injectJavascript = function injectJavascript(src, callback) {
 };
 
 
-// ** {{{ CmdUtils.loadJQuery( func ) }}} **
+// ** {{{ CmdUtils.loadJQuery(func) }}} **
 //
 // Injects the jQuery javascript library into the current tab's document.
 //
@@ -368,7 +355,7 @@ CmdUtils.loadJQuery = function loadJQuery(func) {
   );
 };
 
-// ** {{{ CmdUtils.onPageLoad( callback ) }}} **
+// ** {{{ CmdUtils.onPageLoad(callback) }}} **
 //
 // Sets up a function to be run whenever a page is loaded in
 // the window that this Ubiquity sandbox is associated with.
@@ -385,7 +372,7 @@ CmdUtils.onPageLoad = function onPageLoad( callback ) {
 };
 
 
-// ** {{{ CmdUtils.setLastResult( result ) }}} **
+// ** {{{ CmdUtils.setLastResult(result) }}} **
 //
 // **Deprecated.  Do not use.**
 //
@@ -398,7 +385,7 @@ CmdUtils.setLastResult = function setLastResult( result ) {
   globals.lastCmdResult = result;
 };
 
-// ** {{{ CmdUtils.getGeoLocation( callback ) }}} **
+// ** {{{ CmdUtils.getGeoLocation(callback) }}} **
 //
 // Uses Geo-IP lookup to get the user's physical location. Will cache the result.
 // If a result is already in the cache, this function works both
@@ -506,7 +493,7 @@ CmdUtils.getHiddenWindow = function getHiddenWindow() {
                    .hiddenDOMWindow;
 }
 
-// ** {{{ CmdUtils.getTabSnapshot( tab, options ) }}} **
+// ** {{{ CmdUtils.getTabSnapshot(tab, options) }}} **
 //
 // Creates a thumbnail image of the contents of a given tab.
 // {{{ tab }}} a tab object.
@@ -517,7 +504,7 @@ CmdUtils.getTabSnapshot = function getTabSnapshot( tab, options ) {
   return CmdUtils.getWindowSnapshot( win, options );
 }
 
-// ** {{{ CmdUtils.getWindowSnapshot( win, options ) }}} **
+// ** {{{ CmdUtils.getWindowSnapshot(win, options) }}} **
 //
 // Creates a thumbnail image of the contents of the given window.
 // {{{ window }}} a window object.
@@ -563,7 +550,7 @@ CmdUtils.getWindowSnapshot = function getWindowSnapshot( win, options ) {
 }
 
 
-// ** {{{ CmdUtils.getImageSnapshot( url, callback ) }}} **
+// ** {{{ CmdUtils.getImageSnapshot(url, callback) }}} **
 //
 // Takes a snapshot of an image residing at the passed-in URL. This
 // is useful for when you want to get the bits of an image when it
@@ -598,7 +585,7 @@ CmdUtils.getImageSnapshot = function getImageSnapshot( url, callback ) {
 // FUNCTIONS FOR STORING AND RETRIEVING PASSWORDS AND OTHER SENSITIVE INFORMATION
 // ---------------------------
 
-// ** {{{ CmdUtils.savePassword( opts ) }}} **
+// ** {{{ CmdUtils.savePassword(opts) }}} **
 //
 // Saves a pair of username/password (or username/api key) to the password
 // manager.
@@ -650,7 +637,7 @@ CmdUtils.savePassword = function savePassword( opts ){
   }
 }
 
-// ** {{{ CmdUtils.retrieveLogins( name ) }}} **
+// ** {{{ CmdUtils.retrieveLogins(name) }}} **
 //
 // Retrieves one or more username/password saved with CmdUtils.savePassword.
 //
@@ -684,7 +671,7 @@ CmdUtils.retrieveLogins = function retrieveLogins( name ){
 // COMMAND CREATION FUNCTIONS
 // -----------------------------------------------------------------
 
-// ** {{{ CmdUtils.CreateCommand( options ) }}} **
+// ** {{{ CmdUtils.CreateCommand(options) }}} **
 //
 // Creates and registers a Ubiquity command.
 //
@@ -706,18 +693,20 @@ CmdUtils.retrieveLogins = function retrieveLogins( name ){
 // {{{ options.takes }}} Defines the primary argument of the command,
 // a.k.a. the direct-object of the verb.  A dictionary object with a
 // single property.  The name of the property will be the display name
-// of the primary argument.  The value of the property must be a
+// of the primary argument.  The value of the property must be either a
 // noun type (see
 // https://wiki.mozilla.org/Labs/Ubiquity/Ubiquity_0.1_Nountypes_Reference
-// ) which defines what type of values are valid for the argument.
+// ) which defines what type of values are valid for the argument, or
+// a regular expression that filters what the argument can consist of.
 //
 // {{{ options.modifiers }}} Defines any number of secondary arguments
 // of the command, a.k.a. indirect objects of the verb.  A dictionary
-// object with any number of properties; the name of each property should
-// be a preposition-word ('to', 'from', 'with', etc.), and the value is
-// the noun type for the argument.  The name of the property is the word
-// that the user will type on the command line to invoke the modifier,
-// and the noun type determines the range of valid values.
+// object with any number of properties; the name of each property
+// should be a preposition-word ('to', 'from', 'with', etc.), and the
+// value is either the noun type or regular expression for the
+// argument.  The name of the property is the word that the user will
+// type on the command line to invoke the modifier, and the noun type
+// or regular expression determines the range of valid values.
 //
 // For more about the use of arguments in your command, see
 // https://wiki.mozilla.org/Labs/Ubiquity/Ubiquity_0.1_Author_Tutorial#Commands_with_Arguments
@@ -726,7 +715,8 @@ CmdUtils.retrieveLogins = function retrieveLogins( name ){
 // make your command easier for users to learn: **
 //
 // {{{ options.description }}} A string containing a short description
-// of your command, to be displayed on the command-list page.
+// of your command, to be displayed on the command-list page. Can include
+// HTML tags.
 //
 // {{{ options.help }}} A string containing a longer description of
 // your command, also displayed on the command-list page, which can go
@@ -741,6 +731,8 @@ CmdUtils.retrieveLogins = function retrieveLogins( name ){
 // {{{ options.author }}} A dictionary object describing the command's
 // author.  Can have {{{options.author.name}}}, {{{options.author.email}}},
 // and {{{options.author.homepage}}} properties, all strings.
+//
+// {{{ options.homepage }}} The URL of the command's homepage, if any.
 //
 // {{{ options.contributors }}} An array of strings naming other people
 // who have contributed to your command.
@@ -768,6 +760,13 @@ CmdUtils.retrieveLogins = function retrieveLogins( name ){
 // display it once the user has stopped typing for a bit. If
 // {{{options.preview}}} isn't a function, then this option is
 // ignored.
+//
+// {{{ options.previewUrl }}} Specifies the URL which the preview
+// pane's browser should load before calling the command's preview
+// function. When the command's preview function is called, its
+// {{{pblock}}} argument will be the {{{<body>}}} node of this URL's
+// document. This can also be a relative URL, in which case it will be
+// based off the URL from which the feed is being retrieved.
 
 CmdUtils.CreateCommand = function CreateCommand( options ) {
   var globalObj = CmdUtils.__globalObject;
@@ -789,9 +788,26 @@ CmdUtils.CreateCommand = function CreateCommand( options ) {
       displayMessage("No action defined.");
     };
 
+  var nu = {};
+  Components.utils.import("resource://ubiquity/modules/nounutils.js", nu);
+  var nounTypeFromRegExp = nu.NounUtils.nounTypeFromRegExp;
+
   if( options.takes ) {
     execute.DOLabel = getKey( options.takes );
-    execute.DOType = options.takes[execute.DOLabel];
+    if (execute.DOLabel) {
+      execute.DOType = options.takes[execute.DOLabel];
+
+      if (execute.DOType.constructor.name == "RegExp")
+        execute.DOType = nounTypeFromRegExp(execute.DOType);
+    }
+  }
+
+  if( options.modifiers ) {
+    for (label in options.modifiers) {
+      var modNounType = options.modifiers[label];
+      if (modNounType.constructor.name == "RegExp")
+        options.modifiers[label] = nounTypeFromRegExp(modNounType);
+    }
   }
 
   // Reserved keywords that shouldn't be added to the cmd function.
@@ -811,6 +827,11 @@ CmdUtils.CreateCommand = function CreateCommand( options ) {
     };
   }
 
+  if (execute.previewUrl)
+    // Call our "patched' Utils.url(), which has the ability
+    // to base a relative URL on the current feed's URL.
+    execute.previewUrl = Utils.url(execute.previewUrl);
+
   globalObj["cmd_" + options.name] = execute;
 };
 
@@ -818,7 +839,7 @@ CmdUtils.CreateCommand = function CreateCommand( options ) {
 // TEMPLATING FUNCTIONS
 // -----------------------------------------------------------------
 
-// ** {{{ CmdUtils.renderTemplate( template, data ) }}} **
+// ** {{{ CmdUtils.renderTemplate(template, data) }}} **
 //
 // Renders a template by substituting values from a dictionary into
 // a template string or file. The templating language used is
@@ -865,12 +886,12 @@ CmdUtils.renderTemplate = function renderTemplate( template, data ) {
   return templateObject.process( data );
 };
 
-// ** {{{ CmdUtils.previewAjax( pblock, options ) }}} **
+// ** {{{ CmdUtils.previewAjax(pblock, options) }}} **
 //
 // Does an asynchronous request to a remote web service.  It is used
-// just like jQuery.ajax(), which is documented at
-// http://docs.jquery.com/Ajax .
-// The difference is that CmdUtils.previewAjax is designed to handle
+// just like {{{jQuery.ajax()}}}, which is documented at
+// http://docs.jquery.com/Ajax/jQuery.ajax.
+// The difference is that {{{CmdUtils.previewAjax()}}} is designed to handle
 // command previews, which can be canceled by the user between the
 // time that it's requested and the time it displays.  If the preview
 // is canceled, no callbacks in the options object will be called.
@@ -890,16 +911,30 @@ CmdUtils.previewAjax = function previewAjax(pblock, options) {
     else
       newOptions[key] = options[key];
   }
+
+  var wrappedXhr;
+  if (newOptions.xhr)
+    wrappedXhr = newOptions.xhr;
+  else
+    wrappedXhr = function() { return new XMLHttpRequest(); };
+
+  function backgroundXhr() {
+    var newXhr = wrappedXhr.apply(this, arguments);
+    newXhr.mozBackgroundRequest = true;
+    return newXhr;
+  }
+  newOptions.xhr = backgroundXhr;
+
   xhr = jQuery.ajax(newOptions);
   return xhr;
 };
 
-// ** {{{ CmdUtils.previewGet( pblock, url, data, callback, type ) }}} **
+// ** {{{ CmdUtils.previewGet(pblock, url, data, callback, type) }}} **
 //
 // Does an asynchronous request to a remote web service.  It is used
-// just like jQuery.get(), which is documented at
-// http://docs.jquery.com/Ajax/jQuery.get .
-// The difference is that CmdUtils.previewAjax is designed to handle
+// just like {{{jQuery.get()}}}, which is documented at
+// http://docs.jquery.com/Ajax/jQuery.get.
+// The difference is that {{{CmdUtils.previewGet()}}} is designed to handle
 // command previews, which can be canceled by the user between the
 // time that it's requested and the time it displays.  If the preview
 // is canceled, the given callback will not be called.
@@ -909,17 +944,51 @@ CmdUtils.previewGet = function previewGet(pblock,
                                           data,
                                           callback,
                                           type) {
-  var xhr;
-  function abort() {
-    if (xhr)
-      xhr.abort();
+  if ( jQuery.isFunction( data ) ) {
+    callback = data;
+    data = null;
   }
-  var cb = CmdUtils.previewCallback(pblock, callback, abort);
-  xhr = jQuery.get(url, data, cb, type);
-  return xhr;
+
+  return CmdUtils.previewAjax(pblock,
+                              {type: "GET",
+                               url: url,
+                               data: data,
+                               success: callback,
+                               dataType: type});
 };
 
-// ** {{{ CmdUtils.previewCallback( pblock, callback, abortCallback ) }}} **
+
+// ** {{{ CmdUtils.previewPost(pblock, url, data, callback, type) }}} **
+//
+// Does an asynchronous request to a remote web service.  It is used
+// just like {{{jQuery.post()}}}, which is documented at
+// http://docs.jquery.com/Ajax/jQuery.post.
+// The difference is that {{{CmdUtils.previewPost()}}} is designed to handle
+// command previews, which can be canceled by the user between the
+// time that it's requested and the time it displays.  If the preview
+// is canceled, the given callback will not be called.
+
+CmdUtils.previewPost = function previewPost(pblock,
+                                            url,
+                                            data,
+                                            callback,
+                                            type) {
+  if ( jQuery.isFunction( data ) ) {
+    callback = data;
+    data = {};
+  }
+
+  return CmdUtils.previewAjax(pblock,
+                              {type: "POST",
+                               url: url,
+                               data: data,
+                               success: callback,
+                               dataType: type});
+};
+
+
+
+// ** {{{ CmdUtils.previewCallback(pblock, callback, abortCallback) }}} **
 //
 // Creates a 'preview callback': a wrapper for a function which
 // first checks to see if the current preview has been canceled,
@@ -964,196 +1033,334 @@ CmdUtils.previewCallback = function previewCallback(pblock,
   return wrappedCallback;
 };
 
-// ** {{{ CmdUtils.makeContentPreview( filePathOrOptions ) }}} **
+// ** {{{ CmdUtils.makeSearchCommand(options) }}} **
 //
-// Creates an interactive command preview from a given html template
-// file or a dictionary object providing the same information.
+// A specialized version of {{{CmdUtils.CreateCommand()}}}, this lets
+// you make commands that interface with search engines, without
+// having to write so much boilerplate code.
 //
-// Currently this contains a lot of code that is specific to the preview
-// of the Map command, and so can't be used for other commands.  In the
-// future we plan to make it into a general-purpose utility function.
-
-CmdUtils.makeContentPreview = function makeContentPreview(filePathOrOptions) {
-  // TODO: Figure out when to kill this temp file.
-  if( typeof(filePathOrOptions) == "object" ) {
-    if( filePathOrOptions.file != null ) var filePath = filePathOrOptions.file;
-    if( filePathOrOptions.html != null) {
-      var data = filePathOrOptions.html;
-      var file = Components.classes["@mozilla.org/file/directory_service;1"]
-                           .getService(Components.interfaces.nsIProperties)
-                           .get("TmpD", Components.interfaces.nsIFile);
-      file.append("preview.tmp");
-      file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, 0666);
-
-      // file is nsIFile, data is a string
-      var foStream = Components.
-                     classes["@mozilla.org/network/file-output-stream;1"].
-                     createInstance(Components.interfaces.nsIFileOutputStream);
-
-      // use 0x02 | 0x10 to open file for appending.
-      foStream.init(file, 0x02 | 0x08 | 0x20, 0666, 0);
-      // write, create, truncate
-      // In a c file operation, we have no need to set file mode with or
-      // operation, directly using "r" or "w" usually.
-      foStream.write(data, data.length);
-      foStream.close();
-      var filePath = file.path;
-    }
-  } else {
-    filePath = filePathOrOptions;
-  }
-
-  var previewWindow = null;
-  var xulIframe = null;
-  var query = "";
-
-  function showPreview() {
-    previewWindow.Ubiquity.onPreview(query);
-  }
-
-  function contentPreview(pblock, directObj) {
-    // TODO: This is a hack. Not sure that we should even
-    // be doing something with getting a query in here. It's
-    // command specifc. This function shouldn't be? -- Aza
-    if( !directObj ) directObj = {text:"", html:""};
-
-    // This is meant to be a global, so that it can affect showPreview().
-    query = directObj;
-
-    if (previewWindow) {
-      showPreview();
-    } else if (xulIframe) {
-      // TODO
-    } else {
-      var browser;
-
-      function onXulLoaded(event) {
-        var uri = Utils.url({uri: filePath, base: feed.id}).spec;
-        browser = xulIframe.contentDocument.createElement("browser");
-        browser.setAttribute("src", uri);
-        browser.setAttribute("disablesecurity", true);
-        browser.setAttribute("width", 500);
-        browser.setAttribute("height", 300);
-        browser.addEventListener("load",
-                                 Utils.safeWrapper(onPreviewLoaded),
-                                 true);
-        browser.addEventListener("unload",
-                                 Utils.safeWrapper(onPreviewUnloaded),
-                                 true);
-        xulIframe.contentDocument.documentElement.appendChild(browser);
-      }
-
-      function onXulUnloaded(event) {
-        if (event.target == pblock || event.target == xulIframe)
-          xulIframe = null;
-      }
-
-      function onPreviewLoaded() {
-        // TODO: Security risk -- this is very insecure!
-        previewWindow = browser.contentWindow;
-
-        previewWindow.Ubiquity.context = context;
-
-        previewWindow.Ubiquity.resizePreview = function(height) {
-          xulIframe.setAttribute("height", height);
-          browser.setAttribute("height", height);
-        };
-
-        previewWindow.Ubiquity.insertHtml = function(html) {
-          var doc = context.focusedWindow.document;
-          var focused = context.focusedElement;
-
-          // This would be nice to store the map in the buffer...  But
-	        // for now, it causes a problem with a large image showing
-	        // up as the default.
-          //CmdUtils.setLastResult( html );
-
-          if (doc.designMode == "on") {
-            // TODO: Remove use of query here?
-            // The "query" here is useful so that you don't have to retype what
-            // you put in the map command. That said, this is map-command
-            // specific and should be factored out. -- Aza
-            doc.execCommand("insertHTML", false, query.html + "<br/>" + html);
-          }
-          else if (CmdUtils.getSelection()) {
-	          CmdUtils.setSelection(html);
-      	  }
-      	  else {
-      	    displayMessage("Cannot insert in a non-editable space. Use " +
-                           "'edit page' for an editable page.");
-      	  }
-        };
-
-        showPreview();
-      }
-
-      function onPreviewUnloaded() {
-        previewWindow = null;
-      }
-
-      xulIframe = pblock.ownerDocument.createElement("iframe");
-      xulIframe.setAttribute("src",
-                             "chrome://ubiquity/content/content-preview.xul");
-      xulIframe.style.border = "none";
-      xulIframe.setAttribute("width", 500);
-
-      xulIframe.addEventListener("load",
-                                 Utils.safeWrapper(onXulLoaded),
-                                 true);
-      pblock.innerHTML = "";
-      pblock.addEventListener("DOMNodeRemoved", onXulUnloaded, false);
-      pblock.appendChild(xulIframe);
-    }
-  }
-
-  return contentPreview;
-};
-
-// ** {{{ CmdUtils.makeSearchCommand( options ) }}} **
-//
-// A specialized version of CmdUtils.CreateCommand, this lets you make
-// commands that interface with search engines, without having to write
-// so much boilerplate code.
-//
-// {{{options}}} as the argument of CmdUtils.CreateCommand, except that
-// instead of {{{options.takes}}}, {{{options.execute}}}, and
-// {{{options.preview}}} you only need a single property:
+// {{{options}}} as the argument of {{{CmdUtils.CreateCommand()}}},
+// except that instead of {{{options.takes}}}, {{{options.execute}}},
+// and {{{options.preview}}} you only need a single property:
 //
 // {{{options.url}}} The url of a search results page from the search
-// engine of your choice.  Must contain the literal string {QUERY}, which
-// will be replaced with the user's search term to generate a URL that
-// should point to the correct page of search results.
-// (We're assuming that the user's search term appears in the URL of the
-// search results page, which is true for most search engines.)
-// For example: http://www.google.com/search?q={QUERY}
+// engine of your choice.  Must contain the literal string
+// {{{{QUERY}}}}, which will be replaced with the user's search term
+// to generate a URL that should point to the correct page of search
+// results.  (We're assuming that the user's search term appears in
+// the URL of the search results page, which is true for most search
+// engines.)  For example: {{{http://www.google.com/search?q={QUERY}}}}
+//
+// Also note that {{{options.icon}}} if not passed, will be generated from
+// the url passed in {{{options.url}}}, and {{{options.description}}} if
+// not passed, will be auto generated from a template and
+// {{{options.name}}}.
 //
 // The {{{options.execute}}}, {{{options.preview}}}, and
 // {{{options.takes}}} properties are all automatically generated for you
 // from {{{options.url}}}, so all you need to provide is {{{options.url}}}
 // and {{{options.name}}}.  You can choose to provide other optional
 // properties, which work the same way as they do for
-// {{{CmdUtils.CreateCommand}}}.  You can also override the auto-generated
+// {{{CmdUtils.CreateCommand()}}}.  You can also override the auto-generated
 // {{{preview()}}} function by providing your own as {{{options.preview}}}.
+//
+// {{{options.postData}}} if passed will make ubiquity use POST instead of
+// GET, and the key:value pairs in it are all passed to the url passed in
+// {{{options.url}}}. Instead of passing the search params in the url, pass
+// it (along with any other params) like so:
+//
+//   {{{postData: {"q": "{QUERY}", "hl": "en"}}}}
+//
+// When this is done, the query will be substituted in as usual.
+//
+// An extra option {{{options.parser}}} can be passed, which will make
+// Ubiquity automatically generate a keyboard navigatable preview of
+// the results. It is passed as an object containing at the very least
+// {{{options.parser.title}}}, a jQuery selector that matches the
+// titles of the results. Optionally, you can include members It is
+// highly recommended that you include {{{options.parser.container}}},
+// a jQuery selector that will match an element that groups
+// result-data.  If this is not passed, Ubiquity will fall back to a
+// fragile method of pairing titles, previews and thumbnails, which
+// might not always work.  {{{options.parser.preview}}}, a jQuery
+// selector that will match the preview returned by the search
+// provider; {{{options.parser.baseurl}}}, a string that will be
+// prefixed to relative links, such that relative paths will still
+// work out of context. If not passed, it will be auto-generated from
+// {{{options.url}}} (and thus //may// be incorrect)
+// {{{options.parser.thumbnail}}}, a jQuery selector that will match a
+// thumbnail which will automatically be displayed in the
+// preview. Note: if it doesn't point to an {{{<img>}}} element,
+// ubiquity will try and find a child of the node of type {{{img}}}
+// inside the element, and use the first-found one.
+//
+// Examples:
+// {{{
+// CmdUtils.makeSearchCommand({
+//   name: "Yahoo",
+//   url: "http://search.yahoo.com/search?p={QUERY}",
+//   parser: {container: "div.res",
+//            title: "div h3",
+//            preview: "div.abstr, div.sm-abs"}
+// });
+// }}}
+// {{{
+// CmdUtils.makeSearchCommand({
+//   name: "Google",
+//   url: "http://www.google.com/search?q={QUERY}",
+//   parser: {container: "li.g.w0",
+//            title: "h3.r",
+//            preview: "div.s"}
+// });
+// }}}
+// {{{
+// CmdUtils.makeSearchCommand({
+//   name: "IMDb",
+//   url: "http://www.imdb.com/find?s=all&q={QUERY}",
+//   parser: {container: "table#outerbody table table table tr",
+//            title: "td+td>a",
+//            thumbnail: "td img:not([src='http://i.media-imdb.com/images/b.gif'])"}
+// });
+// }}}
 
 CmdUtils.makeSearchCommand = function makeSearchCommand( options ) {
+  options.takes = {"search term": noun_arb_text};
   options.execute = function(directObject, modifiers) {
     var query = encodeURIComponent(directObject.text);
-    var urlString = options.url.replace(/%s|{QUERY}/g, query);
-    Utils.openUrlInBrowser(urlString);
+    if (options.postData) {
+      var urlString = options.url;
+      for (data in options.postData)
+        options.postData[data] = options.postData[data]
+                                        .replace(/%s|{QUERY}/g, query);
+      Utils.openUrlInBrowser(urlString, options.postData);
+    }
+    else {
+      var urlString = options.url.replace(/%s|{QUERY}/g, query);
+      Utils.openUrlInBrowser(urlString);
+    }
     CmdUtils.setLastResult( urlString );
   };
+  var domainRe = /.*?\/\/[^?/]*/;
+  var relRe = /:\/\//;
+  var baseurl = "";
+  if (options.url) {
+    baseurl = domainRe.exec(options.url);
+    if (!options.icon) {
+      // guess where the favicon is
+      options.icon = baseurl+"/favicon.ico";
+    }
+  }
+  if (!options.description && options.name) {
+    // generate description from the name of the seach command
+    options.description = "Searches "+options.name+" for your words.";
+  }
+  if (options.parser && options.parser.type) {
+    options.parser.type = options.parser.type.toLowerCase();
+  }
+  if (!options.preview) {
+    options.preview = function searchPreview(pblock, directObject, modifiers) {
+      var urlString = (options.parser && options.parser.url) || options.url;
+      const MAX_RESULTS = 4;
+      if (options.parser && directObject.text.length > 0) {
+        var parser = options.parser;
+        var query = encodeURIComponent(directObject.text);
+        // check if we're using POST
+        if (options.postData) {
+          for (data in options.postData)
+            options.postData[data] = options.postData[data]
+                                            .replace(/%s|{QUERY}/g, query);
+        }
+        // or GET
+        else {
+          urlString = urlString.replace(/%s|{QUERY}/g, query);
+        }
+        pblock.innerHTML = "<p>Loading results...</p>";
+        if (!parser.baseurl) {
+          // use the calculated baseurl
+          parser.baseurl = baseurl;
+        }
+        function searchParser(data) {
+          if (data) {
+            var template = "";
+            pblock.innerHTML = "<h2>Results for <em>"
+                             + directObject.text
+                             + "</em>:</h2>";
+            var results = [];
+            switch (parser.type) {
+              case "json":
+                var path = parser.container.split(".");
+                for (p in path) {
+                  data = data[path[p]];
+                }
+                for (d in data) {
+                  var res = {};
+                  var title = data[d][parser.title];
+                  res.title = title;
+                  var href = data[d][parser.href];
+                  res.href = href;
+                  if (parser.preview) {
+                    var preview = data[d][parser.preview];
+                    res.preview = preview;
+                  }
+                  if (parser.thumbnail) {
+                    var thumbnail = data[d][parser.thumbnail];
+                    res.thumbnail = thumbnail;
+                  }
+                  results.push(res);
+                }
+                break;
+              case "html":
+              default:
+                var doc = jQuery(data);
+                if (parser.container) {
+                  var set = doc.find(parser.container);
+                  set.each(function(){
+                    var result = {};
+                    result.title = jQuery(this).find(parser.title);
+                    if (parser.preview) {
+                      result.preview = jQuery(this).find(parser.preview);
+                    }
+                    if (parser.thumbnail) {
+                      result.thumbnail = jQuery(this).find(parser.thumbnail);
+                    }
+                    results.push(result);
+                  });
+                }
+                else {
+                  CmdUtils.log("WARNING from "+options.name+" : "
+                              +"falling back to fragile parsing");
+                  var titles = doc.find(parser.title);
+                  var sane = true;
+                  if (parser.preview) {
+                    var previews = doc.find(parser.preview);
+                    if (titles.length != previews.length) {
+                      CmdUtils.log("ERROR from "+options.name+": "
+                                  +"unequal number of titles and previews - "
+                                  +"previews might be mixed up");
+                      sane = false;
+                    }
+                  }
+                  if (parser.thumbnail) {
+                    var thumbnails = doc.find(parser.thumbnail);
+                    if (titles.length != thumbnails.length) {
+                      CmdUtils.log("ERROR from "+options.name+": "
+                                  +"unequal number of titles and thumbnails - "
+                                  +"thumbnails might be mixed up");
+                      sane = false;
+                    }
+                  }
+                  for (var cnt=0; cnt<titles.length; cnt++) {
+                    var result = {};
+                    result.title = titles.eq(cnt);
+                    if (sane && parser.preview) {
+                      result.preview = previews.eq(cnt);
+                    }
+                    if (sane && parser.thumbnail) {
+                      result.thumbnail = thumbnails.eq(cnt);
+                    }
+                    results.push(result);
+                  }
+                }
+                var tmp = [];
+                for (result in results) {
+                  if (results[result].title && results[result].title.length) {
+                    var href = "";
+                    if (results[result].title[0].tagName == "A") {
+                      href = results[result].title.attr("href");
+                    }
+                    else {
+                      href = results[result].title.find("A").eq(0).attr("href");
+                    }
+                    if (!relRe.exec(href)) {
+                      href = parser.baseurl+href;
+                    }
+                    results[result].href = href;
+                    results[result].title = results[result].title.text();
 
-  options.takes = {"search term": noun_arb_text};
+                    if (results[result].thumbnail &&
+                        results[result].thumbnail.length) {
+                      var src = "";
+                      if (results[result].thumbnail[0].tagName == "IMG") {
+                        src = results[result].thumbnail.attr("src");
+                      }
+                      else {
+                        src = results[result].thumbnail
+                                             .find("IMG")
+                                             .eq(0)
+                                             .attr("src");
+                      }
+                      if (!relRe.exec(src)) {
+                        src = parser.baseurl+src;
+                      }
+                      results[result].thumbnail = src;
+                    }
+                    if (results[result].preview) {
+                      results[result].preview = results[result].preview.text();
+                    }
+                    tmp.push(results[result]);
+                  }
+                }
+                results = tmp;
+                break;
+            }
+            if (results.length == 0) {
+              template = "<p>No results<p>";
+            }
+            else {
+              template = "<dl>";
+              for (var cnt = 0;
+                   cnt < Math.min(results.length,MAX_RESULTS);
+                   cnt++) {
+                var result = results[cnt];
+                template += ("<dt style='font-weight: bold; clear: both;'>" +
+                             "[" + (cnt+1) + "] " +
+                             "<a style='border-bottom: 1px solid;' href='" +
+                             result.href + "' accesskey='" + (cnt+1) + "'>" +
+                             result.title+"</a>" +
+                             "</dt>");
+                if (result.thumbnail) {
+                  template += ("<dd style='float: left; margin: 0 10px 0 0'>" +
+                               "<img src='" + result.thumbnail +
+                               "' height='70' />" + "</dd>");
+                }
+                if (result.preview) {
+                  template += ("<dd style='margin-left: 2em;'>" +
+                               result.preview + "</dd>");
+                }
+              }
+              template += "</dl>";
+              // we did not find an equal amount of titles, previews
+              // and thumbnails
 
-  if (! options.preview ) {
-    options.preview = function(pblock, directObject, modifiers) {
-      var query = directObject.text;
-      var content = "Performs a " + options.name + " search";
-	  if(query.length > 0)
-		content += " for <b>" + query + "</b>";
-      pblock.innerHTML = content;
+              if (sane == false) {
+                template += ("<p>Note: no previews have been generated, " +
+                             "because an error occured while parsing the " +
+                             "results</p>");
+              }
+            }
+          }
+          else {
+            template = "<p>Error parsing search results.</p>"
+                     + "<p>Press return to go directly to search results</p>";
+          }
+          pblock.innerHTML += template;
+        };
+        if (options.postData) {
+          CmdUtils.previewPost(pblock, urlString, options.postData,
+                               searchParser, options.parser.type || "html");
+        }
+        else {
+          CmdUtils.previewGet(pblock, urlString, null, searchParser,
+                              options.parser.type || "html");
+        }
+      }
+      else {
+        var content = "Searches "+options.name+" for your words";
+        if(directObject.text.length > 0)
+          content += ": <b>" + directObject.text + "</b>";
+        pblock.innerHTML = content;
+      }
     };
-    options.previewDelay = 10;
   }
 
   options.name = options.name.toLowerCase();
@@ -1161,7 +1368,7 @@ CmdUtils.makeSearchCommand = function makeSearchCommand( options ) {
   CmdUtils.CreateCommand(options);
 };
 
-// ** {{{ CmdUtils.makeBookmarkletCommand }}} **
+// ** {{{ CmdUtils.makeBookmarkletCommand(options) }}} **
 //
 // Creates and registers a Ubiquity command based on a bookmarklet.
 // When the command is run, it will invoke the bookmarklet.
@@ -1181,8 +1388,7 @@ CmdUtils.makeSearchCommand = function makeSearchCommand( options ) {
 // since bookmarklets can't take arguments, there's no reason to provide
 // {{{options.takes}}} or {{{options.modifiers}}}.
 
-CmdUtils.makeBookmarkletCommand = function makeBookmarkletCommand(
-                                                             options ) {
+CmdUtils.makeBookmarkletCommand = function makeBookmarkletCmd(options) {
   options.name = options.name.toLowerCase().replace(/ /g,'-');
 
   options.execute = function(directObject, modifiers) {
