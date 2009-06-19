@@ -40,20 +40,19 @@
  * ***** END LICENSE BLOCK ***** */
 
 // Creates a Ubiquity interface and binds it to the given message
-// panel, text box, and--optionally--preview block element.
+// panel and text box.
 //
 // The message panel should be a xul:panel instance, and the text box
-// should be a xul:textbox instance. The preview block, if supplied,
-// should be a HTML block element (e.g., a DIV).
+// should be a xul:textbox instance.
 
-function Ubiquity(msgPanel, textBox, cmdManager, previewBlock) {
+function Ubiquity(msgPanel, textBox, cmdManager) {
   this.__msgPanel = msgPanel;
   this.__textBox = textBox;
   this.__cmdManager = cmdManager;
-  this.__previewBlock = previewBlock;
   this.__needsToExecute = false;
   this.__showCount = 0;
   this.__lastValue = null;
+  this.__previewTimerID = -1;
 
   var self = this;
 
@@ -79,24 +78,25 @@ function Ubiquity(msgPanel, textBox, cmdManager, previewBlock) {
   var xulr = Components.classes["@mozilla.org/xre/app-info;1"]
                    .getService(Components.interfaces.nsIXULRuntime);
 
-  if(xulr.OS == "Windows"){                 
+  if(xulr.OS === "WINNT"){
      textBox.addEventListener("blur",
                            function(event) { self.__onBlur(event); },
                            false);
    }
-
-  this.__resetPreview();
 }
 
 Ubiquity.prototype = {
-  __DEFAULT_PREVIEW_LOCATION: "chrome://ubiquity/content/preview.html",
+  __PROCESS_INPUT_DELAY: 50,
   __KEYCODE_ENTER: 13,
   __KEYCODE_UP: 38,
   __KEYCODE_DOWN: 40,
   __KEYCODE_TAB:  9,
   __MIN_CMD_PREVIEW_LENGTH: 0,
-  __DEFAULT_PREVIEW: ("<div class=\"help\">" + "Type the name of a command and press enter to " +
-                      "execute it, or <b>help</b> for assistance." + "</div>"),
+  __KEYCODE_1: 49,
+
+  get textBox() {
+    return this.__textBox;
+  },
 
   __onBlur: function __onBlur() {
     // Hackish fix for #330.
@@ -122,16 +122,15 @@ Ubiquity.prototype = {
   __onKeydown: function __onKeyDown(event) {
     if (event.keyCode == this.__KEYCODE_UP) {
       event.preventDefault();
-      this.__cmdManager.moveIndicationUp(this.__makeContext(),
-                                         this.__previewBlock);
+      this.__cmdManager.moveIndicationUp(this.__makeContext());
     } else if (event.keyCode == this.__KEYCODE_DOWN) {
       event.preventDefault();
-      this.__cmdManager.moveIndicationDown(this.__makeContext(),
-                                           this.__previewBlock);
+      this.__cmdManager.moveIndicationDown(this.__makeContext());
     } else if (event.keyCode == this.__KEYCODE_TAB) {
       event.preventDefault();
-      var suggestionText = this.__cmdManager.getHilitedSuggestionText(this.__makeContext(),
-                                               this.__previewBlock);
+      var suggestionText = this.__cmdManager.getHilitedSuggestionText(
+        this.__makeContext()
+      );
       if(suggestionText)
         this.__textBox.value = suggestionText;
     }
@@ -146,14 +145,19 @@ Ubiquity.prototype = {
     if (keyCode == this.__KEYCODE_UP ||
                keyCode == this.__KEYCODE_DOWN ||
                keyCode == this.__KEYCODE_TAB) {
+    } else if (keyCode >= this.__KEYCODE_1 &&
+               keyCode < this.__KEYCODE_1 + 10 &&
+               event.altKey && event.ctrlKey) {
+      this.__cmdManager.activateAccessKey(keyCode - this.__KEYCODE_1 + 1);
     } else
-      this.__updatePreview();
+      this.__processInput();
   },
 
    __onKeyPress: function(event) {
      var keyCode = event.keyCode;
-     
+
      if (keyCode == this.__KEYCODE_ENTER) {
+       this.__forceProcessInput();
        if (this.__cmdManager.hasSuggestions()) {
          this.__needsToExecute = true;
        }
@@ -163,39 +167,43 @@ Ubiquity.prototype = {
 
   __onSuggestionsUpdated: function __onSuggestionsUpdated() {
     var input = this.__textBox.value;
-    this.__cmdManager.onSuggestionsUpdated(input,
-					   this.__makeContext(),
-					   this.__previewBlock);
+    this.__cmdManager.onSuggestionsUpdated(input, this.__makeContext());
   },
 
-  __updatePreview: function __updatePreview() {
+  __delayedProcessInput: function __delayedProcessInput() {
+    this.__previewTimerID = -1;
     var self = this;
 
-    if (this.__previewBlock) {
-      var input = this.__textBox.value;
-      if (input != this.__lastValue) {
+    var input = this.__textBox.value;
+    if (input != this.__lastValue) {
 
-        this.__lastValue = input;
-        var wasPreviewShown = false;
+      this.__lastValue = input;
 
-        if (input.length >= this.__MIN_CMD_PREVIEW_LENGTH)
-          wasPreviewShown = this.__cmdManager.updateInput(
-            input,
-            this.__makeContext(),
-            this.__previewBlock,
-            function() {self.__onSuggestionsUpdated();}
-          );
-        if (!wasPreviewShown) {
-	  this.__resetPreview();
-	}
-      }
+      if (input.length >= this.__MIN_CMD_PREVIEW_LENGTH)
+        this.__cmdManager.updateInput(
+          input,
+          this.__makeContext(),
+          function() {self.__onSuggestionsUpdated();}
+        );
     }
   },
 
-  __resetPreview: function __resetPreview() {
-    if (this.__previewBlock) {
-        this.__previewBlock.innerHTML = this.__DEFAULT_PREVIEW;
+  __forceProcessInput: function __forceProcessInput() {
+    if (this.__previewTimerID != -1) {
+      Utils.clearTimeout(this.__previewTimerID);
+      this.__delayedProcessInput();
     }
+  },
+
+  __processInput: function __processInput() {
+    if (this.__previewTimerID != -1)
+      Utils.clearTimeout(this.__previewTimerID);
+
+    var self = this;
+    this.__previewTimerID = Utils.setTimeout(
+      function() { self.__delayedProcessInput(); },
+      this.__PROCESS_INPUT_DELAY
+    );
   },
 
   __makeContext: function __makeContext() {
@@ -229,6 +237,7 @@ Ubiquity.prototype = {
       this.__cmdManager.execute(context);
       this.__needsToExecute = false;
     }
+    this.__cmdManager.reset();
   },
 
   __onShown: function __onShown() {
@@ -237,7 +246,7 @@ Ubiquity.prototype = {
       this.__textBox.focus();
       this.__textBox.select();
       this.__cmdManager.refresh();
-      this.__updatePreview();
+      this.__processInput();
     }
     this.__showCount += 1;
   },
@@ -252,7 +261,6 @@ Ubiquity.prototype = {
   openWindow: function openWindow(anchor) {
     this.__focusedWindow = document.commandDispatcher.focusedWindow;
     this.__focusedElement = document.commandDispatcher.focusedElement;
-    this.__resetPreview();
 
     this.__msgPanel.hidden = false;
     this.__msgPanel.openPopup(anchor, "overlap", 0, 0, false, true);

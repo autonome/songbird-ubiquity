@@ -42,7 +42,6 @@ Components.utils.import("resource://ubiquity/modules/utils.js");
 Components.utils.import("resource://ubiquity/modules/codesource.js");
 Components.utils.import("resource://ubiquity/modules/sandboxfactory.js");
 Components.utils.import("resource://ubiquity/modules/collection.js");
-Components.utils.import("resource://ubiquity/modules/prefcommands.js");
 Components.utils.import("resource://ubiquity/modules/feed_plugin_utils.js");
 
 const CONFIRM_URL = "chrome://ubiquity/content/confirm-add-command.html";
@@ -95,7 +94,8 @@ function DefaultFeedPlugin(feedManager, messageService, webJsm,
     // Clicking on "subscribe" takes them to the warning page:
     var confirmUrl = (CONFIRM_URL + "?url=" +
                       encodeURIComponent(targetDoc.location.href) +
-                      "&sourceUrl=" + encodeURIComponent(commandsUrl));
+                      "&sourceUrl=" + encodeURIComponent(commandsUrl) +
+                      "&title=" + encodeURIComponent(targetDoc.title));
 
     function isTrustedUrl(commandsUrl, mimetype) {
       // Even if the command feed resides on a trusted host, if the
@@ -152,12 +152,41 @@ function DefaultFeedPlugin(feedManager, messageService, webJsm,
   feedManager.registerPlugin(this);
 }
 
-function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
-                 headerSources, footerSources, jQuery, timeoutInterval) {
-  if (LocalUriCodeSource.isValidUri(feedInfo.srcUri))
-    this.canAutoUpdate = true;
+const CMD_PREFIX = "cmd_";
+const NOUN_PREFIX = "noun_";
 
-  let codeSource;
+function makeCmdForObj(sandbox, objName) {
+  var cmdName = objName.substr(CMD_PREFIX.length);
+  cmdName = cmdName.replace(/_/g, "-");
+  var cmdFunc = sandbox[objName];
+
+  var cmd = {
+    name : cmdName,
+    icon : cmdFunc.icon,
+    execute : function CS_execute(context, directObject, modifiers) {
+      sandbox.context = context;
+      return cmdFunc(directObject, modifiers);
+    }
+  };
+
+  if (cmdFunc.preview) {
+    cmd.preview = function CS_preview(context, directObject, modifiers,
+                                      previewBlock) {
+      sandbox.context = context;
+      return cmdFunc.preview(previewBlock, directObject,
+                             modifiers);
+    };
+  }
+
+  cmd.__proto__ = cmdFunc;
+
+  return finishCommand(cmd);
+};
+
+function makeCodeSource(feedInfo, headerSources, footerSources,
+                        timeoutInterval) {
+  var codeSource;
+
   if (RemoteUriCodeSource.isValidUri(feedInfo.srcUri)) {
     if (feedInfo.canAutoUpdate) {
       codeSource = new RemoteUriCodeSource(feedInfo, timeoutInterval);
@@ -177,37 +206,19 @@ function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
                                    headerSources,
                                    footerSources);
 
-  let CMD_PREFIX = "cmd_";
-  let NOUN_PREFIX = "noun_";
+  return codeSource;
+}
+
+function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
+                 headerSources, footerSources, jQuery, timeoutInterval) {
+  if (LocalUriCodeSource.isValidUri(feedInfo.srcUri))
+    this.canAutoUpdate = true;
+
+  let codeSource = makeCodeSource(feedInfo, headerSources, footerSources,
+                                  timeoutInterval);
 
   var codeCache = null;
   var sandbox = null;
-
-  function makeCmdForObj(sandbox, objName) {
-    var cmdName = objName.substr(CMD_PREFIX.length);
-    cmdName = cmdName.replace(/_/g, "-");
-    var cmdFunc = sandbox[objName];
-
-    var cmd = {
-      name : cmdName,
-      icon : cmdFunc.icon,
-      execute : function CS_execute(context, directObject, modifiers) {
-        sandbox.context = context;
-        return cmdFunc(directObject, modifiers);
-      }
-    };
-
-    if (cmdFunc.preview)
-      cmd.preview = function CS_preview(context, directObject, modifiers,
-                                        previewBlock) {
-        sandbox.context = context;
-        return cmdFunc.preview(previewBlock, directObject, modifiers);
-      };
-
-    cmd.__proto__ = cmdFunc;
-
-    return finishCommand(cmd);
-  };
 
   let self = this;
 
@@ -277,6 +288,13 @@ function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
     }
   };
 
+  this.finalize = function finalize() {
+    // Not sure exactly why, but we get memory leaks if we don't
+    // manually remove these.
+    jQuery = null;
+    sandbox.jQuery = null;
+  };
+
   this.__proto__ = feedInfo;
 }
 
@@ -285,6 +303,7 @@ function makeBuiltinGlobalsMaker(msgService, webJsm) {
   var Ci = Components.interfaces;
 
   webJsm.importScript("resource://ubiquity/scripts/jquery.js");
+  webJsm.importScript("resource://ubiquity/scripts/jquery_setup.js");
   webJsm.importScript("resource://ubiquity/scripts/template.js");
 
   var globalObjects = {};
@@ -323,11 +342,11 @@ function makeBuiltins(languageCode, baseUri) {
   var headerCodeSources = [
     new LocalUriCodeSource(basePartsUri + "header/utils.js"),
     new LocalUriCodeSource(basePartsUri + "header/cmdutils.js"),
+    new LocalUriCodeSource(basePartsUri + "header/experimental_utils.js"),
     new LocalUriCodeSource(basePartsUri + "header/deprecated.js")
   ];
   var feeds = [
-    baseFeedsUri + "onstartup.js",
-    PrefCommands.id
+    baseFeedsUri + "onstartup.js"
   ];
   var footerCodeSources = [
     new LocalUriCodeSource(basePartsUri + "footer/final.js")

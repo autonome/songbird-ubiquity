@@ -35,7 +35,7 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
- 
+
  var noun_type_emailservice = {
    _name: "email service",
    suggest: function(text, html) {
@@ -51,71 +51,47 @@
      }
      return suggestions;
    },
-   default: function() {
+   'default': function() {
      //TODO: find a better way to pick the default
      return CmdUtils.makeSugg("gmail", null, "gmail");
    }
 };
 
 function getGmailContacts( callback ) {
-  var url = "http://mail.google.com/mail/contacts/data/export";
-  var params = {
-    exportType: "ALL",
-    out: "VCARD"
-  };
-  
-  jQuery.get(url, params, function(data) {
-    data = data.split("\n");
-    var contacts = [];
-    var name="";
-    var email="";
-    var incard=false;
-    
-    for each( var line in data ) {
+  // TODO: It's not really a security hazard since we're evaluating the
+  // Vcard data in a sandbox, but I'm not sure how accurate this
+  // algorithm is; we might want to consider using a third-party
+  // VCard parser instead, e.g.: git://github.com/mattt/vcard.js.git
+  // -AV
 
-      if (line.indexOf(" ") == 0) {
-        // a folded line, need to remove space and
-        // attach to previous line
-        if (linevar.length > 0) {
-          lineval = lineval + line.slice(1);
-        }
-      } else {
-        var colonIndex = line.indexOf(":");
-        var linevar = line.slice(0, colonIndex);
-        var lineval = line.slice(colonIndex + 1);
-        if (linevar == "BEGIN") {
-          // new card, reset values
-          incard = true;
-          name = "";
-          email = "";
-        } else if (linevar == "FN" || linevar.indexOf("FN;") == 0) {
-          name = lineval;
-        } else if (linevar == "EMAIL" || linevar.indexOf("EMAIL;") == 0) {
-          email = lineval;
-        } else if (linevar == "END") {
-          // end of card, store it
-          var contact = {};
-          if (incard) {
-            contact["name"] = name;
-            contact["email"] = email;
-            contacts.push(contact);
-          }
-          incard = false;
-          name = "";
-          email = "";
-        }
+  var sandbox = Components.utils.Sandbox("data:text/html,");
+  jQuery.get(
+    "http://mail.google.com/mail/contacts/data/export",
+    {exportType: "ALL", out: "VCARD"},
+    function(data) {
+      function unescapeBS(m) {
+        var result =  Components.utils.evalInSandbox("'"+ m +"'", sandbox);
+        if (typeof(result) == "string")
+          return result;
+        else
+          return "";
       }
-      
-    }
-    
-
-
-    callback(contacts);
-  }, "text");
+      var contacts = [], name = '';
+      for each(var line in data.replace(/\r\n /g, '').split(/\r\n/))
+        if(/^(FN|EMAIL).*?:(.*)/.test(line)){
+          var {$1: key, $2: val} = RegExp;
+          var val = val.replace(/\\./g, unescapeBS);
+          if(key === "FN")
+            name = val;
+          else
+            contacts.push({name: name, email: val});
+        }
+      callback(contacts);
+    },
+    "text");
 }
 
 function getYahooContacts( callback ){
-  
   var url = "http://us.mg1.mail.yahoo.com/yab";
   //TODO: I have no idea what these params mean
   var params = {
@@ -125,12 +101,12 @@ function getYahooContacts( callback ){
     attrs: "1",
     xf: "sf,mf"
   };
-  
+
   jQuery.get(url, params, function(data) {
 
     var contacts = [];
     for each( var line in jQuery(data).find("ct") ){
-      var name = jQuery(line).attr("yi"); 
+      var name = jQuery(line).attr("yi");
       //accept it as as long as it is not undefined
       if(name){
         var contact = {};
@@ -142,23 +118,23 @@ function getYahooContacts( callback ){
 
     callback(contacts);
   }, "text");
-  
+
 }
 
 function getContacts(callback){
   getGmailContacts(callback);
-  getYahooContacts(callback);  
+  getYahooContacts(callback);
 }
 
 var noun_type_contact = {
   _name: "contact",
   contactList: null,
   callback:function(contacts) {
-    noun_type_contact.contactList = noun_type_contact.contactList.concat(contacts);    
+    noun_type_contact.contactList = noun_type_contact.contactList.concat(contacts);
   },
 
   suggest: function(text, html) {
-    
+
     if (noun_type_contact.contactList == null) {
       noun_type_contact.contactList = [];
       getContacts( noun_type_contact.callback);
@@ -171,7 +147,7 @@ var noun_type_contact = {
     var suggestions  = [];
     for ( var c in noun_type_contact.contactList ) {
       var contact = noun_type_contact.contactList[c];
-      
+
       if ((contact["name"].match(text, "i")) || (contact["email"].match(text, "i"))){
 	      suggestions.push(CmdUtils.makeSugg(contact["email"]));
 	    }
@@ -212,20 +188,8 @@ var noun_arb_text = {
   _name: "text",
   rankLast: true,
   suggest: function( text, html, callback, selectionIndices ) {
-    var suggestion = CmdUtils.makeSugg(text, html);
-    /* If the input comes all or in part from a text selection,
-     * we'll stick some html tags into the summary so that the part
-     * that comes from the text selection can be visually marked in
-     * the suggestion list.
-     */
-    if (selectionIndices) {
-      var pre = suggestion.summary.slice(0, selectionIndices[0]);
-      var middle = suggestion.summary.slice(selectionIndices[0],
-					    selectionIndices[1]);
-      var post = suggestion.summary.slice(selectionIndices[1]);
-      suggestion.summary = pre + "<span class='selection'>" +
-			     middle + "</span>" + post;
-    }
+    var suggestion = CmdUtils.makeSugg(text, html, null,
+                                       selectionIndices);
     return [suggestion];
   }
 };
@@ -233,7 +197,7 @@ var noun_arb_text = {
 var noun_type_date = {
   _name: "date",
 
-  default: function(){
+  'default': function(){
      var date = Date.parse("today");
      var text = date.toString("dd MM, yyyy");
      return CmdUtils.makeSugg(text, null, date);
@@ -256,7 +220,7 @@ var noun_type_date = {
 var noun_type_time = {
    _name: "time",
 
-   default: function(){
+   'default': function(){
      var time = Date.parse("now");
      var text = time.toString("hh:mm tt");
      return CmdUtils.makeSugg(text, null, time);
@@ -358,89 +322,12 @@ function isAddress( query, callback ) {
  *  The code is totally based on Julien Couvreur's insert-link command (http://blog.monstuff.com/archives/000343.html)
  */
 noun_type_awesomebar = {
-
-  _getHistoryLinks: function(partialSearch, onSearchComplete) {
-        function AutoCompleteInput(aSearches) {
-            this.searches = aSearches;
-        }
-        AutoCompleteInput.prototype = {
-            constructor: AutoCompleteInput,
-
-            searches: null,
-
-            minResultsForPopup: 0,
-            timeout: 10,
-            searchParam: "",
-            textValue: "",
-            disableAutoComplete: false,
-            completeDefaultIndex: false,
-
-            get searchCount() {
-                return this.searches.length;
-            },
-
-            getSearchAt: function(aIndex) {
-                return this.searches[aIndex];
-            },
-
-            onSearchBegin: function() {},
-            onSearchComplete: function() {},
-
-            popupOpen: false,
-
-            popup: {
-                setSelectedIndex: function(aIndex) {},
-                invalidate: function() {},
-
-                // nsISupports implementation
-                QueryInterface: function(iid) {
-                    if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIAutoCompletePopup)) return this;
-
-                    throw Components.results.NS_ERROR_NO_INTERFACE;
-                }
-            },
-
-            // nsISupports implementation
-            QueryInterface: function(iid) {
-                if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIAutoCompleteInput)) return this;
-
-                throw Components.results.NS_ERROR_NO_INTERFACE;
-            }
-        }
-
-        var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].getService(Components.interfaces.nsIAutoCompleteController);
-
-        var input = new AutoCompleteInput(["history"]);
-        controller.input = input;
-
-        input.onSearchComplete = function() {
-            onSearchComplete(controller);
-        };
-
-        controller.startSearch(partialSearch);
-  },
-
-  _getLinks: function(controller, callback) {
-      var links = [];
-
-      for (var i = 0; i < controller.matchCount; i++) {
-        var url = controller.getValueAt(i);
-        var title = controller.getCommentAt(i);
-        if (title.length == 0) { title = url; }
-
-        var favicon = controller.getImageAt(i);
-
-        callback( CmdUtils.makeSugg(url, title, favicon) );
-    }
-  },
   name: "url",
-  _links: null,
-  suggest: function(part, html, callback){
-      var onSearchComplete = function(controller) {
-         noun_type_awesomebar._getLinks(controller, callback);
-      };
 
-      this._getHistoryLinks(part, onSearchComplete);
+  suggest: function(part, html, callback){
+     Utils.history.search(part, 5, function(result){
+        callback(CmdUtils.makeSugg(result.url, result.title, result.favicon))
+     })
   }
 };
 
@@ -524,7 +411,8 @@ var LanguageCodes = {
   'spanish' : 'es',
   'swedish' : 'sv',
   'ukranian' : 'uk',
-  'vietnamese' : 'vi'
+  'vietnamese' : 'vi',
+  'simple english' : 'simple'
 };
 
 var noun_type_language =  {
@@ -542,7 +430,7 @@ var noun_type_language =  {
     }
     return suggestions;
   },
-  
+
   // Returns the language name for the given lang code.
   getLangName: function(langCode) {
 	var code = langCode.toLowerCase();
@@ -569,12 +457,12 @@ var noun_type_tab = {
   suggest: function( text, html ) {
     var suggestions  = [];
     var tabs = Utils.tabs.search(text, 5);
-    
+
     for ( var tabName in tabs ){
       var tab = tabs[tabName];
       suggestions.push( CmdUtils.makeSugg(tabName, tab.document.URL, tab) );
     }
-    
+
     return suggestions;
   }
 };
@@ -690,7 +578,7 @@ var noun_type_tag = {
 var noun_type_geolocation = {
    _name : "geolocation",
    rankLast: true,
-   default: function() {
+   'default': function() {
 		var location = CmdUtils.getGeoLocation();
 		if (!location) {
 			// TODO: there needs to be a better way of doing this,
@@ -754,9 +642,9 @@ var noun_type_livemark = {
 
   /*
   * text & html = Livemark Title (string)
-  * data = { itemIds : [] } - an array of itemIds(long long) 
+  * data = { itemIds : [] } - an array of itemIds(long long)
   * for the suggested livemarks.
-  * These values can be used to reference the livemark in bookmarks & livemark 
+  * These values can be used to reference the livemark in bookmarks & livemark
   * services
   */
 
@@ -768,7 +656,7 @@ var noun_type_livemark = {
         .getItemsWithAnnotation("livemark/feedURI", {});
   },
 
-  default: function() {
+  'default': function() {
     var feeds = this.getFeeds();
     if( feeds.length > 0 ) {
        return CmdUtils.makeSugg("all livemarks", null, {itemIds: feeds});
@@ -810,6 +698,7 @@ Components.utils.import("resource://ubiquity/modules/setup.js");
 var noun_type_commands = {
    _name: "command",
    __cmdSource : UbiquitySetup.createServices().commandSource,
+
    suggest : function(fragment){
       var cmds = [];
       for each( var cmd in this.__cmdSource.commandNames){
@@ -824,81 +713,106 @@ var noun_type_commands = {
    }
 }
 
-noun_type_twitter_user = {
+var noun_type_twitter_user = {
    _name: "twitter username",
-   suggest: function(sugg, html){
-     var passwordManager = Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
-     var logins = passwordManager.findLogins({}, "https://twitter.com", "", "");
+   rankLast: true,
+   suggest: function(text, html){
+     // Twitter usernames can't contain spaces; reject input with spaces.
+     if (text.length && text.indexOf(" ") != -1)
+       return [];
 
      var suggs = [];
 
-     for(var x = 0; x < logins.length; x++){
-        var login = logins[x];
-	     if(login.username.indexOf(sugg) != -1){
-           suggs.push(CmdUtils.makeSugg(login.username, null, login));
-        }
+     // If we don't need to ask the user for their master password, let's
+     // see if we can suggest known users that the user has logged-in as
+     // before.
+     var tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].
+                   getService(Ci.nsIPK11TokenDB);
+     var token = tokenDB.getInternalKeyToken();
+
+     if (!token.needsLogin() || token.isLoggedIn()) {
+       // Look for twitter usernames stored in password manager
+       var usersFound = {};
+       var passwordManager = Cc["@mozilla.org/login-manager;1"]
+                             .getService(Ci.nsILoginManager);
+       var urls = ["https://twitter.com", "http://twitter.com"];
+       urls.forEach(
+         function(url) {
+           var logins = passwordManager.findLogins({}, url, "", "");
+
+           for (var x = 0; x < logins.length; x++) {
+             var login = logins[x];
+             if (login.username.indexOf(text) != -1 &&
+                 !usersFound[login.username]) {
+               usersFound[login.username] = true;
+               suggs.push(CmdUtils.makeSugg(login.username, null, login));
+             }
+           }
+         });
      }
 
-     if(suggs.length == 0) suggs.push(CmdUtils.makeSugg(sugg, null, null));
+     // If all else fails, treat the user's single-word input as a twitter
+     // username.
+     if (suggs.length == 0)
+       suggs.push(CmdUtils.makeSugg(text, null, null));
 
      return suggs;
-     
-   },
-}
+   }
+};
 
-noun_type_number = {
+var noun_type_number = {
    suggest : function(sugg){
-      return sugg.match("^[0-9]{1,}$") ? [CmdUtils.makeSugg(sugg)] : []
+     return sugg.match("^[0-9]{1,}$") ? [CmdUtils.makeSugg(sugg)] : [];
    },
-   default : function(){
+   "default" : function(){
       return CmdUtils.makeSugg("1");
    }
 }
 
 
 function getBookmarklets(callback) {
-  
+
   var bookmarklets = {};
-  
+
   var Ci = Components.interfaces;
   var Cc = Components.classes;
-  
+
   var bookmarks = Cc["@mozilla.org/browser/nav-bookmarks-service;1"]
                   .getService(Ci.nsINavBookmarksService);
   var history = Cc["@mozilla.org/browser/nav-history-service;1"]
                 .getService(Ci.nsINavHistoryService);
- 
+
   var query = history.getNewQuery();
- 
+
   // Specify folders to be searched
   var folders = [bookmarks.toolbarFolder, bookmarks.bookmarksMenuFolder,
                  bookmarks.unfiledBookmarksFolder];
   query.setFolders(folders, folders.length);
-  
+
   var options = history.getNewQueryOptions();
   options.queryType = options.QUERY_TYPE_BOOKMARKS
- 
+
   // Specify terms to search for, matches against title, URL and tags
   query.searchTerms = "javascript";
- 
+
   var result = history.executeQuery(query, options);
-  
+
   // The root property of a query result is an object representing the folder you specified above.
   var resultContainerNode = result.root;
   // Open the folder, and iterate over it's contents.
   resultContainerNode.containerOpen = true;
   for (var i=0; i < resultContainerNode.childCount; ++i) {
     var childNode = resultContainerNode.getChild(i);
- 
+
     // Accessing properties of matching bookmarks
     var title = childNode.title;
     var uri = childNode.uri;
-    
+
     if(uri.substring(0,11) == "javascript:") {
       bookmarklets[title.toLowerCase().replace(/ /g,'-')] = uri;
     }
   }
-    
+
   callback(bookmarklets);
 }
 
@@ -909,11 +823,13 @@ var noun_type_bookmarklet = {
     noun_type_bookmarklet.bookmarkletList = bookmarklets;
   },
   suggest: function( text, html )  {
-    
+
     if (noun_type_bookmarklet.bookmarkletList == null) {
       getBookmarklets(noun_type_bookmarklet.callback);
       return [];
     }
+
+    bookmarklets = noun_type_bookmarklet.bookmarkletList;
 
     bookmarklets = noun_type_bookmarklet.bookmarkletList;
 
@@ -922,8 +838,8 @@ var noun_type_bookmarklet = {
       if (c.match(text, "i"))
 	      suggestions.push(CmdUtils.makeSugg(c, "", bookmarklets[c]));
     }
-    
+
     return suggestions.splice(0, 5);
-      
+
   }
 };

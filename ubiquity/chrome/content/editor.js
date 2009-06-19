@@ -3,12 +3,18 @@ Components.utils.import("resource://ubiquity/modules/prefcommands.js");
 Components.utils.import("resource://ubiquity/modules/setup.js");
 
 var Editor = {
-
   EDITOR_PREF : "extensions.ubiquity.editor",
 
+  onFeedTypeChange: function() {
+    var value = $("#feedTypeMenu").val();
+    PrefCommands.changeType(value);
+    $(".feed-type-desc").hide();
+    $("#" + value).show();
+  },
   onLoad : function(){
     var editor = Application.prefs.getValue(this.EDITOR_PREF, null);
     $("#editorInputBox").val(editor);
+    this.onFeedTypeChange();
   },
   onSave : function(){
     Application.prefs.setValue(this.EDITOR_PREF, $("#editorInputBox").val());
@@ -39,7 +45,7 @@ var Editor = {
       var file = Components.classes["@mozilla.org/file/directory_service;1"]
                            .getService(Components.interfaces.nsIProperties)
                            .get("TmpD", Components.interfaces.nsIFile);
-      file.append("ubiquity.tmp");
+      file.append("ubiquity.tmp.js");
       file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, 0666);
 
       Application.console.log("temp file path    : " + file.path);
@@ -106,13 +112,21 @@ var Editor = {
 
 function paste() {
   try {
-
-    editor = document.getElementById("editor");
-    file = encodeURIComponent("[gistfile1]");
-    quickPaste = "file_ext" + file + "=.js&file_name" + file + "=x&file_contents" + file + "=" + encodeURIComponent(editor.editor.editor.getCode()) + "&x=27&y=27";
-    updateUrl = "http://gist.github.com/gists";
-    Utils.openUrlInBrowser(updateUrl, quickPaste);
-
+    var feedType = $("#feedTypeMenu").val();
+    var editor = document.getElementById("editor");
+    var code = editor.editor.editor.getCode();
+    if (feedType == "commands") {
+      var file = encodeURIComponent("[gistfile1]");
+      var quickPaste = ("file_ext" + file + "=.js&file_name" +
+                        file + "=x&file_contents" + file +
+                        "=" + encodeURIComponent(code) + "&x=27&y=27");
+      var updateUrl = "http://gist.github.com/gists";
+      Utils.openUrlInBrowser(updateUrl, quickPaste);
+    } else if (feedType == "locked-down-commands") {
+      var url = ("http://ubiquity.mozilla.com/locked-down-feeds/" +
+                 "?initial_content=" + encodeURIComponent(code));
+      Utils.openUrlInBrowser(url);
+    }
   } catch(e) {
     Components.utils.reportError(e);
     displayMessage("Error: " + e);
@@ -121,25 +135,7 @@ function paste() {
 
 function importTemplate() {
   editor = document.getElementById("editor");
-  var template = "\n\
-\/* This is a template command */\n\
-CmdUtils.CreateCommand({ \n\
-  name: \"example\",\n\
-  icon: \"http://example.com/example.png\",\n\
-  homepage: \"http://example.com/\",\n\
-  author: { name: \"Your Name\", email: \"you@example.com\"},\n\
-  license: \"GPL\",\n\
-  description: \"A short description of your command\",\n\
-  help: \"how to use your command\",\n\
-  takes: {\"input\": noun_arb_text},\n\
-  preview: function( pblock, input ) {\n\
-    var template = \"Hello ${name}\";\n\
-    pblock.innerHTML = CmdUtils.renderTemplate(template, {\"name\": \"World!\"});\n\
-  },\n\
-  execute: function(input) {\n\
-    CmdUtils.setSelection(\"You selected: \"+input.html);\n\
-  }\n\
-});";
+  var template = Utils.getLocalUrl("command-template.js");
   editor.editor.setCode(editor.editor.getCode()+template);
   PrefCommands.setCode(editor.editor.getCode());
 }

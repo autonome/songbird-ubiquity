@@ -62,14 +62,20 @@ Utils.__globalObject = this;
 // {{{aMessage}}} is a plaintext string corresponding to the warning
 // to provide.
 //
-// {{{stackFrame}}} is an optional {{{nsIStackFrame}}} instance that
-// corresponds to the stack frame which is reporting the error; a link
-// to the line of source that it references will be shown in the JS
-// Error Console.  It defaults to the caller's stack frame.
+// {{{stackFrameNumber}}} is an optional number specifying how many
+// frames back in the call stack the warning message should be
+// associated with. Its default value is 0, meaning that the line
+// number of the caller is shown in the JS Error Console.  If it's 1,
+// then the line number of the caller's caller is shown.
 
-Utils.reportWarning = function reportWarning(aMessage, stackFrame) {
-  if (!stackFrame)
-    stackFrame = Components.stack.caller;
+Utils.reportWarning = function reportWarning(aMessage, stackFrameNumber) {
+  var stackFrame = Components.stack.caller;
+
+  if (typeof(stackFrameNumber) != "number")
+    stackFrameNumber = 0;
+
+  for (var i = 0; i < stackFrameNumber; i++)
+    stackFrame = stackFrame.caller;
 
   var consoleService = Components.classes["@mozilla.org/consoleservice;1"]
                        .getService(Components.interfaces.nsIConsoleService);
@@ -121,6 +127,40 @@ Utils.decodeJson = function decodeJson(string) {
              .createInstance(Ci.nsIJSON);
   return json.decode(string);
 };
+
+// ** {{{Utils.ellipsify()}}} **
+//
+// Given a DOM node and a maximum number of characters, returns a
+// new DOM node that has the same contents truncated to that number of
+// characters. If any truncation was performed, an ellipsis is placed
+// at the end of the content.
+
+Utils.ellipsify = function ellipsify(node, chars) {
+  var doc = node.ownerDocument;
+  var copy = node.cloneNode(false);
+  if (node.hasChildNodes()) {
+    var children = node.childNodes;
+    for (var i = 0; i < children.length && chars > 0; i++) {
+      var childNode = children[i];
+      var childCopy;
+      if (childNode.nodeType == childNode.TEXT_NODE) {
+        var value = childNode.nodeValue;
+        if (value.length >= chars) {
+          childCopy = doc.createTextNode(value.slice(0, chars) + "\u2026");
+          chars = 0;
+        } else {
+          childCopy = childNode.cloneNode(false);
+          chars -= value.length;
+        }
+      } else if (childNode.nodeType == childNode.ELEMENT_NODE) {
+        childCopy = ellipsify(childNode, chars);
+        chars -= childCopy.textContent.length;
+      }
+      copy.appendChild(childCopy);
+    }
+  }
+  return copy;
+}
 
 // ** {{{ Utils.setTimeout() }}} **
 //
@@ -209,8 +249,11 @@ Utils.__timerData = {
 // * {{{base}}} is a string or {{{nsIURI}}} representing an absolute
 //   URL, which is used as the base URL for the {{{uri}}} keyword
 //   argument.
+//
+// An optional second argument may also be passed in, which specifies
+// a default URL to return if the given URL can't be parsed.
 
-Utils.url = function url(spec) {
+Utils.url = function url(spec, defaultUri) {
   var base = null;
   if (typeof(spec) == "object") {
     if (spec instanceof Ci.nsIURI)
@@ -218,13 +261,19 @@ Utils.url = function url(spec) {
       return spec;
 
     // Assume jQuery-style dictionary with keyword args was passed in.
-    base = Utils.url(spec.base);
+    base = spec.base ? Utils.url(spec.base, defaultUri) : null;
     spec = spec.uri ? spec.uri : null;
   }
 
   var ios = Cc["@mozilla.org/network/io-service;1"]
     .getService(Ci.nsIIOService);
-  return ios.newURI(spec, null, base);
+
+  try {
+    return ios.newURI(spec, null, base);
+  } catch (e if (e.result == Components.results.NS_ERROR_MALFORMED_URI) &&
+           defaultUri) {
+    return Utils.url(defaultUri);
+  }
 };
 
 // ** {{{ Utils.openUrlInBrowser() }}} **
@@ -363,6 +412,42 @@ Utils.paramsToString = function paramsToString(params) {
   return "?" + stringPairs.join("&");
 };
 
+// ** {{{ Utils.urlToParams() }}} **
+//
+// This function takes the given url and returns an Object containing keys and
+// values retrieved from its query-part
+
+Utils.urlToParams = function urlToParams(url) {
+  function isArray(key) {
+    return (key.substring(key.length-2)=="[]");
+  }
+  var params = {};
+  var paramList = url.substring(url.indexOf("?")+1).split("&");
+  for (param in paramList) {
+    var key="",
+        value="";
+    var kv = paramList[param].split("=");
+    try {
+      key = kv[0];
+      value = decodeURIComponent(kv[1]).replace(/\+/g," ");
+    }
+    catch (e){};
+    if (isArray(key)) {
+      key = key.substring(0,key.length-2);
+      if (params[key]) {
+        params[key].push(value);
+      }
+      else {
+        params[key]=[value];
+      }
+    }
+    else {
+      params[key] = value;
+    }
+  }
+  return params;
+}
+
 // ** {{{ Utils.getLocalUrl() }}} **
 //
 // This function synchronously retrieves the content of the given
@@ -472,6 +557,22 @@ Utils.computeCryptoHash = function computeCryptoHash(algo, str) {
   return hashString;
 };
 
+// ** {{{ Utils.escapeHtml() }}} **
+//
+// This function returns a version of the string safe for
+// insertion into HTML. Useful when you just want to
+// concatenate a bunch of strings into an HTML fragment
+// and ensure that everything's escaped properly.
+
+Utils.escapeHtml = function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+};
+
+
 // ** {{{ Utils.convertFromUnicode() }}} **
 //
 // Encodes the given unicode text to a given character set and
@@ -547,7 +648,7 @@ Utils.tabs = {
     for (var name in this._cache) {
        var tab = this._cache[name];
       //TODO: implement a better match algorithm
-      if (name.match(aSearchText, "i") || 
+      if (name.match(aSearchText, "i") ||
           (tab.document.URL && tab.document.URL.toString().match(aSearchText, "i"))) {
         matches[name] = tab;
         matchCount++;
@@ -660,6 +761,85 @@ Utils.tabs = {
 
     return this.__cache;
   }
+};
+
+function AutoCompleteInput(aSearches) {
+    this.searches = aSearches;
+}
+
+AutoCompleteInput.prototype = {
+    constructor: AutoCompleteInput,
+
+    searches: null,
+
+    minResultsForPopup: 0,
+    timeout: 10,
+    searchParam: "",
+    textValue: "",
+    disableAutoComplete: false,
+    completeDefaultIndex: false,
+
+    get searchCount() {
+        return this.searches.length;
+    },
+
+    getSearchAt: function(aIndex) {
+        return this.searches[aIndex];
+    },
+
+    onSearchBegin: function() {},
+    onSearchComplete: function() {},
+
+    popupOpen: false,
+
+    popup: {
+        setSelectedIndex: function(aIndex) {},
+        invalidate: function() {},
+
+        // nsISupports implementation
+        QueryInterface: function(iid) {
+            if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIAutoCompletePopup)) return this;
+
+            throw Components.results.NS_ERROR_NO_INTERFACE;
+        }
+    },
+
+    // nsISupports implementation
+    QueryInterface: function(iid) {
+        if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIAutoCompleteInput)) return this;
+
+        throw Components.results.NS_ERROR_NO_INTERFACE;
+    }
+};
+
+Utils.history = {
+
+     __createController : function createController(onSearchComplete){
+          var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].getService(Components.interfaces.nsIAutoCompleteController);
+
+          var input = new AutoCompleteInput(["history"]);
+          input.onSearchComplete = function(){
+             onSearchComplete(controller);
+          };
+          controller.input = input;
+          return controller;
+     },
+
+     search : function searchHistory(query, maxResults, callback){
+
+        var ctrlr = this.__createController(function(controller){
+           for (var i = 0; i < controller.matchCount; i++) {
+              var url = controller.getValueAt(i);
+              var title = controller.getCommentAt(i);
+              if (title.length == 0) { title = url; }
+              var favicon = controller.getImageAt(i);
+
+              callback({url : url, title : title, favicon : favicon })
+           }
+        });
+
+        ctrlr.startSearch(query);
+     }
 };
 
 // ** {{{ Utils.appName }}} **

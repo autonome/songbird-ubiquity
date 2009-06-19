@@ -47,6 +47,8 @@ Components.utils.import("resource://ubiquity/modules/codesource.js");
 Components.utils.import("resource://ubiquity/modules/sandboxfactory.js");
 Components.utils.import("resource://ubiquity/modules/feed_plugin_utils.js");
 Components.utils.import("resource://ubiquity/modules/contextutils.js");
+Components.utils.import("resource://ubiquity/modules/nounutils.js");
+Components.utils.import("resource://ubiquity/modules/utils.js");
 
 // == The Plugin Class ==
 //
@@ -54,9 +56,9 @@ Components.utils.import("resource://ubiquity/modules/contextutils.js");
 // constructor takes three parameters:
 //
 //   * {{{feedManager}}} is an instance of a {{{FeedManager}}} class.
-//   * {{{messageService}}} is an object that exposes a message service
+//   * {{{messageService}}} is an object that exposes a {{{MessageService}}}
 //     interface.
-//   * {{{webJsm}}} is a WebJsModule instance.
+//   * {{{webJsm}}} is a {{{WebJsModule}}} instance.
 //
 // When instantiated, the LDFP automatically registers itself with the
 // feed manager that's passed to it.
@@ -112,9 +114,10 @@ function LockedDownFeedPlugin(feedManager, messageService, webJsm) {
   // Feeds are encapsulated by feed objects, and it's the goal of this
   // method to create a new one and return it.
   //
-  //   * {{{baseFeedInfo}}} is an object that contains basic information
-  //     about the feed. It's expected that the feed object returned by
-  //     this function will have {{{baseFeedInfo}}} as its prototype.
+  //   * {{{baseFeedInfo}}} is a {{{Feed}}} object that contains basic
+  //     information about the feed. It's expected that the feed
+  //     object returned by this function will have {{{baseFeedInfo}}}
+  //     as its prototype.
   //   * {{{eventHub}}} is an {{{EventHub}}} instance that the feed
   //     object should use to broadcast events related to it.
 
@@ -130,9 +133,11 @@ function LockedDownFeedPlugin(feedManager, messageService, webJsm) {
   feedManager.registerPlugin(this);
 }
 
-// == The Feed Class ==
+// == The Feed Subclass ==
 //
-// This private class is created by {{{LDFP.makeFeed()}}}.
+// This private class is created by {{{LDFP.makeFeed()}}}. Its
+// constructor takes the base {{{Feed}}} object that it will use as
+// its prototype.
 //
 // === Notifying Listeners of Changes ===
 //
@@ -150,10 +155,10 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
     codeSource = new RemoteUriCodeSource(baseFeedInfo);
   else
     codeSource = new LocalUriCodeSource(baseFeedInfo.srcUri.spec);
-  let codeCache;
-  let sandboxFactory = new SandboxFactory({}, "http://www.mozilla.com",
+  var codeCache;
+  var sandboxFactory = new SandboxFactory({}, "http://www.mozilla.com",
                                           true);
-  let currentContext = null;
+  var currentContext = null;
 
   // Private methods.
   function reset() {
@@ -201,10 +206,34 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
 
       let sandbox = sandboxFactory.makeSandbox(codeSource);
 
+      function safe(obj) {
+        return makeSafeObj(obj, sandboxFactory, sandbox);
+      };
+
+      function safeDirectObj(directObject) {
+        if (directObject === null)
+          return null;
+        return safe({text: directObject.text});
+      };
+
+      function safeModifiers(modifiers) {
+        var safeMods = {};
+        for (modLabel in modifiers) {
+          if (typeof(modLabel) != "string")
+            throw new Error("Assertion error: expected string!");
+          safeMods[modLabel] = {text: modifiers[modLabel].text};
+        }
+        return safe(safeMods);
+      }
+
       // === Global Functions for LDFP Feeds ===
       //
       // The following functions are available at the global scope to
-      // all LDFP feeds.
+      // all LDFP feeds. They're specifically meant to be a strict
+      // subset of what's available to default command feeds, so that
+      // any locked-down command feed actually works fine as a
+      // default command feed too (albeit running with vastly
+      // escalated privileges).
 
       // ==== {{{displayMessage()}}} ====
       //
@@ -217,20 +246,20 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
       }
       sandbox.importFunction(displayMessage);
 
-      // ==== {{{getSelection()}}} ====
+      // ==== {{{CmdUtils.getSelection()}}} ====
       //
       // This function returns the user's currently-selected text, if
       // any, as a plain string.
 
-      function getSelection() {
+      function CmdUtils_getSelection() {
         if (!currentContext)
           return "";
 
         return ContextUtils.getSelection(currentContext);
       }
-      sandbox.importFunction(getSelection);
+      sandbox.importFunction(CmdUtils_getSelection);
 
-      // ==== {{{setSelection()}}} ====
+      // ==== {{{CmdUtils.setSelection()}}} ====
       //
       // This function replaces the current selection with new content.
       //
@@ -240,7 +269,7 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
       //     of the html specified by {{{content}}} if the current
       //     selection doesn't support HTML.
 
-      function setSelection(content, options) {
+      function CmdUtils_setSelection(content, options) {
         if (typeof(options) != "undefined")
           options = new XPCSafeJSObjectWrapper(options);
         if (typeof(content) != "string" || !currentContext)
@@ -249,51 +278,179 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
         content = htmlSanitize(content);
         ContextUtils.setSelection(currentContext, content, options);
       }
-      sandbox.importFunction(setSelection);
+      sandbox.importFunction(CmdUtils_setSelection);
 
-      // ==== {{{defineVerb()}}} ====
+      // ==== {{{CmdUtils.CreateCommand()}}} ====
       //
-      // This function creates a new verb.  The dictionary-like object
-      // passed to it should contain the following keys:
+      // This function creates a new command.  The dictionary-like object
+      // passed to it must contain the following keys:
       //
       //   * {{{name}}} is the name of the verb.
-      //   * {{{execute}}} is a function that is called when the verb is
-      //     executed. It takes no parameters and has no return value.
-      //   * {{{preview}}} is an HTML string containing preview text
-      //     that is displayed before the user executes the command.
+      //
+      //   * {{{execute}}} is the function which gets run when the
+      //     user executes the command.  If the command takes
+      //     arguments (see below), the execute method will be passed
+      //     the direct object as its first argument, and a modifiers
+      //     dictionary as its second argument.
+      //
+      // The following properties are used if you want the command to
+      // accept arguments:
+      //
+      //   * {{{takes}}} defines the primary argument of the command,
+      //     a.k.a. the direct-object of the verb.  It's a dictionary
+      //     object with a single property.  The name of the property
+      //     will be the display name of the primary argument.  The
+      //     value of the property must be a regular expression that
+      //     filters what the argument can consist of.
+      //
+      //   * {{{modifiers}}} Defines any number of secondary arguments
+      //     of the command, a.k.a. indirect objects of the verb.  A
+      //     dictionary object with any number of properties; the name
+      //     of each property should be a preposition-word ('to',
+      //     'from', 'with', etc.), and the value is a regular
+      //     expression for the argument.  The name of the property is
+      //     the word that the user will type on the command line to
+      //     invoke the modifier, and the noun type or regular
+      //     expression determines the range of valid values.
+      //
+      // The following keys are optional:
+      //
+      //   * {{{preview}}} is either an HTML string containing preview text
+      //     that is displayed before the user executes the command, or
+      //     a function that takes a preview HTML block and a direct
+      //     object. The preview HTML block is actually just a fake
+      //     DOM object, and its {{{innerHTML}}} attribute is expected to
+      //     be filled-in by the preview function.
+      //
+      //   * {{{description}}} is a string containing a short
+      //     description of the command, to be displayed on the
+      //     command-list page. It can include HTML tags.
+      //
+      //   * {{{help}}} is a string containing a longer
+      //     description of the command, also displayed on the
+      //     command-list page, which can go into more depth, include
+      //     examples of usage, etc. It can include HTML tags.
+      //
+      //   * {{{icon}}} is a string containing the URL of a small
+      //     image (favicon-sized) to be displayed alongside the name
+      //     of the command in the interface.
+      //
+      //   * {{{author}}} is a dictionary object describing the
+      //     command's author.  It can have {{{name}}}, {{{email}}},
+      //     and {{{homepage}}} properties, all strings.
+      //
+      //   * {{{homepage}}} is the URL of the command's homepage, if any.
+      //
+      //   * {{{contributors}}} is an array of strings naming other people
+      //     who have contributed to the command.
+      //
+      //   * {{{license}}} is a string naming the license under which the
+      //     command is distributed, for example "MPL".
       //
       // This function has no return value.
 
-      function defineVerb(info) {
+      function CmdUtils_CreateCommand(info) {
         info = new XPCSafeJSObjectWrapper(info);
+
+        if (!info.name)
+          throw new Error("Command name not provided.");
+        if (!info.execute)
+          throw new Error("Command execute function not provided.");
+
         let cmd = {
-          name: info.name,
           execute: function execute(context, directObject, modifiers) {
             currentContext = context;
-            info.execute();
+            info.execute(safeDirectObj(directObject),
+                         safeModifiers(modifiers));
             currentContext = null;
           }
         };
-        let previewHtml = info.preview;
-        if (typeof(previewHtml) == "string") {
-          previewHtml = htmlSanitize(previewHtml);
-          cmd.preview = function preview(context, directObject, modifiers,
-                                         previewBlock) {
-            previewBlock.innerHTML = previewHtml;
-          };
-          cmd.description = previewHtml;
+        if (info.takes)
+          for (var directObjLabel in info.takes) {
+            if (typeof(directObjLabel) != "string")
+              throw new Error("Direct object label is not a string: " +
+                              directObjLabel);
+            var regExp = safeConvertRegExp(info.takes[directObjLabel]);
+            cmd.DOLabel = directObjLabel;
+            cmd.DOType = NounUtils.nounTypeFromRegExp(regExp);
+            break;
+          }
+        if (info.modifiers) {
+          cmd.modifiers = {};
+          for (var modLabel in info.modifiers) {
+            if (typeof(modLabel) != "string")
+              throw new Error("Modifier label is not a string: " +
+                              directObjLabel);
+            var regExp = safeConvertRegExp(info.modifiers[modLabel]);
+            cmd.modifiers[modLabel] = NounUtils.nounTypeFromRegExp(regExp);
+          }
         }
+        let preview = info.preview;
+        if (typeof(preview) == "string") {
+          preview = htmlSanitize(preview);
+          cmd.preview = function cmd_preview(context, directObject,
+                                             modifiers, previewBlock) {
+            previewBlock.innerHTML = preview;
+          };
+        } else if (typeof(preview) == "function") {
+          cmd.preview = function cmd_preview(context, directObject,
+                                             modifiers, previewBlock) {
+            var fakePreviewBlock = safe({innerHTML: ""});
+            info.preview(fakePreviewBlock,
+                         safeDirectObj(directObject),
+                         safeModifiers(modifiers));
+            var html = fakePreviewBlock.innerHTML;
+            if (typeof(html) == "string")
+              previewBlock.innerHTML = htmlSanitize(html);
+          };
+        }
+
+        var CMD_METADATA_SCHEMA = {
+          name: "text",
+          icon: "url",
+          license: "text",
+          description: "html",
+          help: "html",
+          author: {name: "text",
+                   email: "text",
+                   homepage: "url"},
+          contributors: "array"
+        };
+
+        setMetadata(info, cmd, CMD_METADATA_SCHEMA, htmlSanitize);
+
         cmd = finishCommand(cmd);
 
         self.commands[cmd.name] = cmd;
       }
-      sandbox.importFunction(defineVerb);
+      sandbox.importFunction(CmdUtils_CreateCommand);
 
-      sandboxFactory.evalInSandbox(code,
+      var setupCode = ("var CmdUtils = {};" +
+                       "CmdUtils.getSelection = CmdUtils_getSelection;" +
+                       "CmdUtils.setSelection = CmdUtils_setSelection;" +
+                       "CmdUtils.CreateCommand = CmdUtils_CreateCommand;" +
+                       "delete CmdUtils_getSelection;" +
+                       "delete CmdUtils_setSelection;" +
+                       "delete CmdUtils_CreateCommand;");
+
+      sandboxFactory.evalInSandbox(setupCode,
                                    sandbox,
-                                   [{length: code.length,
-                                     filename: codeSource.id,
+                                   [{length: setupCode.length,
+                                     filename: "<setup code>",
                                      lineNumber: 1}]);
+
+      try {
+        sandboxFactory.evalInSandbox(code,
+                                     sandbox,
+                                     [{length: code.length,
+                                       filename: codeSource.id,
+                                       lineNumber: 1}]);
+      } catch (e) {
+        messageService.displayMessage(
+          {text:  "An exception occurred while loading code.",
+           exception: e}
+        );
+      }
 
       eventHub.notifyListeners("feed-change", baseFeedInfo.uri);
     }
@@ -304,4 +461,92 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
 
   // Set our superclass.
   self.__proto__ = baseFeedInfo;
+}
+
+// == Helper Functions ==
+
+// === {{{safeConvertRegExp()}}} ===
+//
+// This function takes what's expected to be a regular expression
+// object from an untrusted JS context and returns a safe {{{RegExp}}}
+// object that's equivalent to it. The passed-in object is expected
+// to be wrapped with {{{XPCSafeJSObjectWrapper}}}.
+
+function safeConvertRegExp(regExp) {
+  var pattern = regExp.source;
+  var flags = "";
+
+  if (regExp.global)
+    flags += "g";
+  if (regExp.ignoreCase)
+    flags += "i";
+  if (regExp.multiline)
+    flags += "m";
+
+  if (typeof(pattern) != "string" ||
+      typeof(flags) != "string")
+    throw new Error("Parameter was not a RegExp object.");
+
+  return new RegExp(pattern, flags);
+}
+
+// === {{{makeSafeObj()}}} ===
+//
+// Takes an object that can be serialized to JSON and returns a
+// safe version of it native to the given sandbox.
+
+function makeSafeObj(obj, sandboxFactory, sandbox) {
+  var json = Utils.encodeJson(obj);
+  var code = "(" + json + ")";
+  var newObj = sandboxFactory.evalInSandbox(
+    code,
+    sandbox,
+    [{length: code.length,
+      filename: "<makeSafeObj code>",
+      lineNumber: 1}]
+  );
+  return XPCSafeJSObjectWrapper(newObj);
+}
+
+// === {{{setMetadata()}}} ===
+//
+// A helper function to securely set the metadata of an object given
+// untrusted metadata, a schema, and an HTML sanitization function.
+
+function setMetadata(metadata, object, schema, htmlSanitize) {
+  for (propName in schema) {
+    var propVal = metadata[propName];
+    var propType = schema[propName];
+    if (typeof(propVal) == "string") {
+      switch (propType) {
+      case "text":
+        object[propName] = propVal;
+        break;
+      case "html":
+        object[propName] = htmlSanitize(propVal);
+        break;
+      case "url":
+        var url = Utils.url(propVal);
+        var SAFE_URL_PROTOCOLS = ["http", "https"];
+
+        SAFE_URL_PROTOCOLS.forEach(
+          function(protocol) {
+            if (url.schemeIs(protocol))
+              object[propName] = propVal;
+          });
+        if (typeof(object[propName]) == "undefined")
+          Utils.reportWarning("URL scheme is unsafe: " + propVal);
+        break;
+      }
+    } else if (typeof(propVal) == "object") {
+      propVal = Utils.decodeJson(Utils.encodeJson(propVal));
+      if (typeof(propType) == "object") {
+        object[propName] = new Object();
+        setMetadata(propVal, object[propName], propType, htmlSanitize);
+      } else if (propType == "array" &&
+                 propVal.constructor.name == "Array") {
+        object[propName] = propVal;
+      }
+    }
+  }
 }

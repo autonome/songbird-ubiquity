@@ -42,9 +42,16 @@ Components.utils.import("resource://ubiquity/modules/utils.js");
 Components.utils.import("resource://ubiquity/modules/msgservice.js");
 Components.utils.import("resource://ubiquity/modules/feedmanager.js");
 Components.utils.import("resource://ubiquity/modules/default_feed_plugin.js");
+Components.utils.import("resource://ubiquity/modules/webpage_feed_plugin.js");
+Components.utils.import("resource://ubiquity/modules/python_feed_plugin.js");
+Components.utils.import("resource://ubiquity/modules/locked_down_feed_plugin.js");
 Components.utils.import("resource://ubiquity/modules/annotation_memory.js");
 Components.utils.import("resource://ubiquity/modules/feedaggregator.js");
 Components.utils.import("resource://ubiquity/modules/webjsm.js");
+Components.utils.import("resource://ubiquity/modules/prefcommands.js");
+
+var Cc = Components.classes;
+var Ci = Components.interfaces;
 
 let Application = Components.classes["@mozilla.org/fuel/application;1"]
                   .getService(Components.interfaces.fuelIApplication);
@@ -105,7 +112,6 @@ let UbiquitySetup = {
                     title: "Mozilla Image-Related Commands"}],
 
   __getExtDir: function __getExtDir() {
-    let Cc = Components.classes;
     let extMgr = Cc["@mozilla.org/extensions/manager;1"]
                  .getService(Components.interfaces.nsIExtensionManager);
     let loc = extMgr.getInstallLocation("ubiquity@labs.mozilla.com");
@@ -125,8 +131,6 @@ let UbiquitySetup = {
     // in the User-Agent string so it knows what version of the
     // standard feeds to give us.
     var userAgentExtra = "Ubiquity/" + this.version;
-    var Cc = Components.classes;
-    var Ci = Components.interfaces;
 
     var observer = {
       observe: function(subject, topic, data) {
@@ -142,6 +146,18 @@ let UbiquitySetup = {
     var observerSvc = Cc["@mozilla.org/observer-service;1"]
                       .getService(Ci.nsIObserverService);
     observerSvc.addObserver(observer, "http-on-modify-request", false);
+  },
+
+  __setupFinalizer: function __setupFinalizer() {
+    var observer = {
+      observe: function(subject, topic, data) {
+	gServices.feedManager.finalize();
+      }
+    };
+
+    var observerSvc = Cc["@mozilla.org/observer-service;1"]
+                      .getService(Ci.nsIObserverService);
+    observerSvc.addObserver(observer, "quit-application", false);
   },
 
   __maybeReset: function __maybeReset() {
@@ -190,7 +206,6 @@ let UbiquitySetup = {
   },
 
   isInstalledAsXpi: function isInstalledAsXpi() {
-    let Cc = Components.classes;
     let profileDir = Cc["@mozilla.org/file/directory_service;1"]
                      .getService(Components.interfaces.nsIProperties)
                      .get("ProfD", Components.interfaces.nsIFile);
@@ -230,8 +245,6 @@ let UbiquitySetup = {
 
       this.__modifyUserAgent();
 
-      var Cc = Components.classes;
-
       var annDbFile = AnnotationService.getProfileFile(ANN_DB_FILENAME);
       var annDbConn = AnnotationService.openDatabase(annDbFile);
       var annSvc = new AnnotationService(annDbConn);
@@ -252,6 +265,17 @@ let UbiquitySetup = {
                                                     this.languageCode,
                                                     this.getBaseUri());
 
+      var ldfPlugin = new LockedDownFeedPlugin(feedManager,
+                                               msgService,
+                                               gWebJsModule);
+
+      var wpfp = new WebPageFeedPlugin(feedManager, msgService,
+                                       gWebJsModule);
+
+      var pfp = new PythonFeedPlugin(feedManager,
+                                     msgService,
+                                     gWebJsModule);
+
       var cmdSource = new FeedAggregator(
         feedManager,
         msgService,
@@ -262,6 +286,10 @@ let UbiquitySetup = {
       gServices = {commandSource: cmdSource,
                    feedManager: feedManager,
                    messageService: msgService};
+
+      this.__setupFinalizer();
+
+      PrefCommands.init(feedManager);
 
       if (this.isNewlyInstalledOrUpgraded)
         // For some reason, the following function isn't executed

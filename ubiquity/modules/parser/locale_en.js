@@ -38,19 +38,6 @@ EXPORTED_SYMBOLS = ["EnParser"];
 
 Components.utils.import("resource://ubiquity/modules/parser/parser.js");
 
-// util functions to make it easier to use objects as fake dictionaries
-function dictDeepCopy( dict ) {
-  var newDict = {};
-  for (var i in dict ) {
-    newDict[i] = dict[i];
-  }
-  return newDict;
-};
-
-function dictKeys( dict ) {
-  return [ key for ( key in dict ) ];
-};
-
 var EnParser = {};
 
 EnParser.PRONOUNS = ["this", "that", "it", "selection", "him", "her", "them"];
@@ -58,76 +45,80 @@ EnParser.PRONOUNS = ["this", "that", "it", "selection", "him", "her", "them"];
 function _recursiveParse(unusedWords,
                          filledArgs,
                          unfilledArgs,
-			 creationCallback) {
-  var x;
-  var suggestions = [];
-  var completions = [];
-  var newFilledArgs = {};
-  var newCompletions = [];
+                         creationCallback) {
   // First, the termination conditions of the recursion:
-  if (unusedWords.length == 0) {
+  if (!unusedWords.length) {
     // We've used the whole sentence; no more words. Return what we have.
     return [creationCallback(filledArgs)];
-  } else if ( dictKeys( unfilledArgs ).length == 0 ) {
+  }
+
+  // separate names of prepositions and direct_object
+  var unfilledNames = [], directName, name;
+  for(name in unfilledArgs) {
+    if(unfilledArgs[name].flag === null) {
+      directName = name;
+    } else {
+      unfilledNames.push(name);
+    }
+  }
+  if (!name) {
     // We've used up all arguments, so we can't continue parsing, but
     // there are still unused words.  This was a bad parsing; don't use it.
     return [];
-  } else {
-    // "pop" off the LAST unfilled argument in the sentence and try to fill it
-    var argName = dictKeys( unfilledArgs ).reverse()[0];
-    // newUnfilledArgs is the same as unfilledArgs without argName
-    var newUnfilledArgs = dictDeepCopy( unfilledArgs );
-    delete newUnfilledArgs[argName];
+  }
 
-    // Look for a match for this argument
-    let argumentFound = false;
-    var nounType = unfilledArgs[argName].type;
-    var nounLabel = unfilledArgs[argName].label;
-    var preposition = unfilledArgs[argName].flag;
-    for ( x = 0; x < unusedWords.length; x++ ) {
-      if ( preposition == null || preposition == unusedWords[x] ) {
-        /* a match for the preposition is found at position x!
-          (require exact matches for prepositions.)
-	   Anything following this preposition could be part of the noun.
-           Check every possibility starting from "all remaining words" and
-	   working backwards down to "just the word after the preposition."
-	   */
-        let lastWordEnd = (preposition == null)? x : x +1;
-        let lastWordStart = (preposition == null)? unusedWords.length : unusedWords.length -1;
-        for (let lastWord = lastWordStart; lastWord >= lastWordEnd; lastWord--) {
-          //copy the array, don't modify the original
-          let newUnusedWords = unusedWords.slice();
-	  if (preposition != null) {
-            // take out the preposition
-	    newUnusedWords.splice(x, 1);
-	  }
-	  // pull out words from preposition up to lastWord, as nounWords:
-          let nounWords = newUnusedWords.splice( x, lastWord - x );
-          newFilledArgs = dictDeepCopy( filledArgs );
-          newFilledArgs[ argName ] = nounWords;
-          newCompletions = this._recursiveParse( newUnusedWords,
-                                                 newFilledArgs,
-                                                 newUnfilledArgs,
-						 creationCallback);
-          completions = completions.concat(newCompletions);
-          argumentFound = true;
-	}
-      } // end if preposition matches
-    } // end for each unused word
-    // If argument was never found, try a completion where it's left blank.
-    if (!argumentFound) {
-      newCompletions = _recursiveParse( unusedWords,
-                                        filledArgs,
-     		                        newUnfilledArgs,
-					creationCallback );
-      completions = completions.concat( newCompletions );
+  if(!unfilledNames.length && directName) {
+    // If only direct_object remains, give it all and we're done.
+    let newFilledArgs = {};
+    newFilledArgs[directName] = unusedWords;
+    for (let key in filledArgs) {
+      newFilledArgs[key] = filledArgs[key];
     }
-    return completions;
-  } // end if there are still arguments
+    return [creationCallback(newFilledArgs)];
+  }
+
+  // "pop" off the LAST unfilled argument in the sentence and try to fill it
+  // newUnfilledArgs is the same as unfilledArgs without argName
+  var argName, newUnfilledArgs = {};
+  for (argName in unfilledArgs)  {
+    newUnfilledArgs[argName] = unfilledArgs[argName];
+  }
+  delete newUnfilledArgs[argName];
+
+  // Get the completions with the argName left blank
+  var completions = _recursiveParse(unusedWords,
+                                    filledArgs,
+                                    newUnfilledArgs,
+                                    creationCallback);
+  var preposition = unfilledArgs[argName].flag;
+  // the last word can't be a preposition
+  var x = unusedWords.length - 1;
+  while (x --> 0) if (preposition === unusedWords[x]) {
+      /* a match for the preposition is found at position x!
+        (require exact matches for prepositions.)
+        Things after modifiers which do not match the noun type are thrown out.
+        Check every possibility starting from "all remaining words" and
+        working backwards down to "just the word after the preposition."
+      */
+    let lastWordEnd = x + 1;
+    for (let lastWord = unusedWords.length; lastWord > lastWordEnd; --lastWord) {
+      let newFilledArgs = {};
+      for (let key in filledArgs) newFilledArgs[key] = filledArgs[key];
+      // copy words from preposition up to lastWord, as nounWords:
+      newFilledArgs[argName] = unusedWords.slice(lastWordEnd, lastWord);
+      // copy the array without the preposition and the remaining words.
+      let newUnusedWords = unusedWords.slice(0, x);
+      completions = completions.concat(_recursiveParse(newUnusedWords,
+                                                       newFilledArgs,
+                                                       newUnfilledArgs,
+                                                       creationCallback));
+    }
+  } // end for each unused word that matches preposition
+
+  return completions;
 }
 
-EnParser.parseSentence = function(inputString, nounList, verbList, selObj,
-                                  asyncSuggestionCb) {
+EnParser.parseSentence = function(inputString, nounList, verbList, selObj ){
   // Returns a list of PartiallyParsedSentences.
   // Language-specific.  This one is for English.
   let parsings = [];
@@ -153,28 +144,27 @@ EnParser.parseSentence = function(inputString, nounList, verbList, selObj,
     if (inputArguments.length == 0) {
       // No arguments
       newParsings = [new NLParser.PartiallyParsedSentence(verb,
-							 {},
-							 selObj,
-							 matchScore,
-                                                         EnParser,
-                                                         asyncSuggestionCb)];
+                                                          {},
+                                                          selObj,
+                                                          matchScore,
+                                                          EnParser)];
     } else {
       // Recursively parse to assign arguments
       let makeNewParsing = function( argStrings ) {
-	return new NLParser.PartiallyParsedSentence(verb,
-						    argStrings,
-						    selObj,
-						    matchScore,
-                                                    EnParser,
-                                                    asyncSuggestionCb);
+        return new NLParser.PartiallyParsedSentence(verb,
+                                                    argStrings,
+                                                    selObj,
+                                                    matchScore,
+                                                    EnParser);
       };
       newParsings = _recursiveParse( inputArguments,
                                      {},
                                      verb._arguments,
-				     makeNewParsing);
+                                     makeNewParsing);
     }
     parsings = parsings.concat( newParsings );
   }
+
   return parsings;
 }
 

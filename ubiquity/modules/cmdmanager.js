@@ -40,14 +40,33 @@
 var EXPORTED_SYMBOLS = ["CommandManager"];
 
 Components.utils.import("resource://ubiquity/modules/utils.js");
+Components.utils.import("resource://ubiquity/modules/preview_browser.js");
 
-function CommandManager(cmdSource, msgService, parser) {
+// TODO make this a preference instead
+const MAX_SUGGESTIONS = 5;
+
+var DEFAULT_PREVIEW_URL = (
+  ('data:text/html,' +
+   encodeURI('<html><body class="ubiquity-preview-content" ' +
+             'style="overflow: hidden; margin: 0; padding: 0;">' +
+             '</body></html>'))
+);
+
+function CommandManager(cmdSource, msgService, parser, suggsNode,
+                        previewPaneNode, helpNode) {
   this.__cmdSource = cmdSource;
   this.__msgService = msgService;
   this.__hilitedSuggestion = 0;
   this.__lastInput = "";
   this.__nlParser = parser;
-  this.__queuedPreview = null;
+  this.__activeQuery = null;
+  this.__domNodes = {suggs: suggsNode,
+                     preview: previewPaneNode,
+                     help: helpNode};
+  this._previewer = new PreviewBrowser(previewPaneNode,
+                                       DEFAULT_PREVIEW_URL);
+
+  var self = this;
 
   function onCommandsReloaded() {
     parser.setCommandList(cmdSource.getAllCommands());
@@ -57,48 +76,72 @@ function CommandManager(cmdSource, msgService, parser) {
   cmdSource.addListener("feeds-reloaded", onCommandsReloaded);
   onCommandsReloaded();
 
-  // TODO: Need to add a finalize() method to this class, or else
-  // we'll create memory leaks when a window with this instance closes
-  // and the command source is still holding a reference to us. Either
-  // that or perhaps nsIObservers are weak references and we can
-  // change eventhub to use those instead.
+  this.setPreviewState("no-suggestions");
+
+  this.finalize = function CM_finalize() {
+    cmdSource.removeListener("feeds-reloaded", onCommandsReloaded);
+    this.__cmdSource = null;
+    this.__msgService = null;
+    this.__nlParser = null;
+    this.__domNodes = null;
+  };
 }
 
 CommandManager.prototype = {
+  setPreviewState: function CM_setPreviewState(state) {
+    switch (state) {
+    case "with-suggestions":
+      this.__domNodes.suggs.style.display = "block";
+      this.__domNodes.preview.style.display = "block";
+      this.__domNodes.help.style.display = "none";
+      break;
+    case "no-suggestions":
+      this.__domNodes.suggs.style.display = "none";
+      this.__domNodes.preview.style.display = "none";
+      this.__domNodes.help.style.display = "block";
+      if (this._previewer.isActive)
+        this._previewer.queuePreview(
+          null,
+          0,
+          function(pblock) { pblock.innerHTML = ""; }
+        );
+      break;
+    default:
+      throw new Error("Unknown state: " + state);
+    }
+  },
+
   refresh : function CM_refresh() {
     this.__cmdSource.refresh();
     this.__hilitedSuggestion = 0;
     this.__lastInput = "";
   },
 
-  moveIndicationUp : function CM_moveIndicationUp(context, previewBlock) {
+  moveIndicationUp : function CM_moveIndicationUp(context) {
     this.__hilitedSuggestion -= 1;
     if (this.__hilitedSuggestion < 0) {
-      this.__hilitedSuggestion = this.__nlParser.getNumSuggestions() - 1;
+      this.__hilitedSuggestion = this.__activeQuery.suggestionList.length - 1;
     }
-    this._previewAndSuggest(context, previewBlock);
+    this._previewAndSuggest(context, true);
   },
 
-  moveIndicationDown : function CM_moveIndicationDown(context, previewBlock) {
+  moveIndicationDown : function CM_moveIndicationDown(context) {
     this.__hilitedSuggestion += 1;
-    if (this.__hilitedSuggestion > this.__nlParser.getNumSuggestions() - 1) {
+    if (this.__hilitedSuggestion > this.__activeQuery.suggestionList.length - 1) {
       this.__hilitedSuggestion = 0;
     }
-    this._previewAndSuggest(context, previewBlock);
+    this._previewAndSuggest(context, true);
   },
 
-  _renderSuggestions : function CMD__renderSuggestions(elem) {
+  _renderSuggestions : function CMD__renderSuggestions() {
     var content = "";
-    var suggList = this.__nlParser.getSuggestionList();
-    var suggNumber = this.__nlParser.getNumSuggestions();
-
-
-    for (var x = 0; x < suggNumber; x++) {
-      var suggText = suggList[x].getDisplayText();
-      var suggIconUrl = suggList[x].getIcon();
+    let suggestionList = this.__activeQuery.suggestionList;
+    for (var x = 0; x < suggestionList.length; x++) {
+      var suggText = suggestionList[x].getDisplayText();
+      var suggIconUrl = suggestionList[x].getIcon();
       var suggIcon = "";
       if(suggIconUrl) {
-        suggIcon = "<img src=\"" + suggIconUrl + "\"/>";
+        suggIcon = "<img src=\"" + Utils.escapeHtml(suggIconUrl) + "\"/>";
       }
       suggText = "<div class=\"cmdicon\">" + suggIcon + "</div>&nbsp;" + suggText;
       if ( x == this.__hilitedSuggestion ) {
@@ -108,31 +151,27 @@ CommandManager.prototype = {
         content += "<div class=\"suggested\">" + suggText + "</div>";
       }
     }
-    elem.innerHTML = content;
+    this.__domNodes.suggs.innerHTML = content;
   },
 
-  _renderPreview : function CM__renderPreview(context, previewBlock) {
-    var doc = previewBlock.ownerDocument;
+  _renderPreview : function CM__renderPreview(context) {
     var wasPreviewShown = false;
 
     try {
-      var activeSugg = this.__nlParser.getSentence(this.__hilitedSuggestion);
-      if ( activeSugg ) {
+      var activeSugg = this.__activeQuery.suggestionList[this.__hilitedSuggestion];
+
+      if (activeSugg) {
         var self = this;
-        function queuedPreview() {
-          // Set the preview contents.
-          if (self.__queuedPreview == queuedPreview)
-            activeSugg.preview(context, doc.getElementById("preview-pane"));
-        };
-        this.__queuedPreview = queuedPreview;
-        Utils.setTimeout(this.__queuedPreview, activeSugg.previewDelay);
+        var previewUrl = activeSugg.previewUrl;
+
+        this._previewer.queuePreview(
+          previewUrl,
+          activeSugg.previewDelay,
+          function(pblock) { activeSugg.preview(context, pblock); }
+        );
+
+        wasPreviewShown = true;
       }
-
-      var evt = doc.createEvent("HTMLEvents");
-      evt.initEvent("preview-change", false, false);
-      doc.getElementById("preview-pane").dispatchEvent(evt);
-
-      wasPreviewShown = true;
     } catch (e) {
       this.__msgService.displayMessage(
         {text: ("An exception occurred while previewing the command '" +
@@ -143,48 +182,48 @@ CommandManager.prototype = {
     return wasPreviewShown;
   },
 
-  _previewAndSuggest : function CM__previewAndSuggest(context, previewBlock) {
-    var doc = previewBlock.ownerDocument;
-    if (!doc.getElementById("suggestions")) {
-      // Set the initial contents of the preview block.
-      previewBlock.innerHTML = ('<div id="suggestions"></div>' +
-                                '<div id="preview-pane"></div>');
-    }
+  _previewAndSuggest : function CM__previewAndSuggest(context) {
+    this._renderSuggestions();
 
-    this._renderSuggestions(doc.getElementById("suggestions"));
-
-    return this._renderPreview(context, previewBlock);
+    return this._renderPreview(context);
   },
 
-  updateInput : function CM_updateInput(input, context, previewBlock,
-                                        asyncSuggestionCb) {
-    /* Return true if we created any suggestions, false if we didn't
-     * or if we had nowhere to put them.
-     */
+  activateAccessKey: function CM_activateAccessKey(number) {
+    this._previewer.activateAccessKey(number);
+  },
+
+  reset : function CM_reset() {
+    // TODO: I think?
+    if (this.__activeQuery)
+      this.__activeQuery.cancel();
+  },
+
+  updateInput : function CM_updateInput(input, context, asyncSuggestionCb) {
     this.__lastInput = input;
-    this.__nlParser.updateSuggestionList(input, context, asyncSuggestionCb);
+    this.__activeQuery = this.__nlParser.newQuery(input, context, MAX_SUGGESTIONS);
+    this.__activeQuery.onResults = asyncSuggestionCb;
     this.__hilitedSuggestion = 0;
-    if ( this.__nlParser.getNumSuggestions() == 0 )
-      return false;
-    if (previewBlock)
-      return this._previewAndSuggest(context, previewBlock);
-    else
-      return false;
+    var previewState = "no-suggestions";
+    if (this.__activeQuery.suggestionList.length > 0 &&
+        this._previewAndSuggest(context))
+      previewState = "with-suggestions";
+    this.setPreviewState(previewState);
   },
 
   onSuggestionsUpdated : function CM_onSuggestionsUpdated(input,
-                                                          context,
-                                                          previewBlock) {
+                                                          context) {
     // Called when we're notified of a newly incoming suggestion
-    this.__nlParser.refreshSuggestionList(input);
-    if (previewBlock)
-      this._previewAndSuggest(context, previewBlock);
+    // TODO: Huh?
+    // this.__nlParser.refreshSuggestionList(input);
+    this._previewAndSuggest(context);
   },
 
   execute : function CM_execute(context) {
-    var parsedSentence = this.__nlParser.getSentence(this.__hilitedSuggestion);
+    let suggestionList = this.__activeQuery.suggestionList;
+    var parsedSentence = suggestionList[this.__hilitedSuggestion];
     if (!parsedSentence)
-      this.__msgService.displayMessage("No command called " + this.__lastInput + ".");
+      this.__msgService.displayMessage("No command called " +
+                                       this.__lastInput + ".");
     else
       try {
 	this.__nlParser.strengthenMemory(this.__lastInput, parsedSentence);
@@ -199,26 +238,25 @@ CommandManager.prototype = {
   },
 
   hasSuggestions: function CM_hasSuggestions() {
-    return (this.__nlParser.getNumSuggestions() > 0);
+    return (this.__activeQuery && this.__activeQuery.suggestionList.length > 0);
   },
 
   getSuggestionListNoInput: function CM_getSuggListNoInput(context,
                                                            asyncSuggestionCb) {
-    this.__nlParser.updateSuggestionList("", context, asyncSuggestionCb);
-    return this.__nlParser.getSuggestionList();
+    let noInputQuery = this.__nlParser.newQuery("", context, MAX_SUGGESTIONS);
+    noInputQuery.onResults = asyncSuggestionCb;
+    return noInputQuery.suggestionList;
   },
 
-  getHilitedSuggestionText : function CM_getHilitedSuggestionText(context,
-                                                            previewBlock) {
+  getHilitedSuggestionText : function CM_getHilitedSuggestionText(context) {
     if(!this.hasSuggestions())
       return null;
 
     var selObj = this.__nlParser.getSelectionObject(context);
-    var suggText = this.__nlParser.getSentence(this.__hilitedSuggestion)
+    var suggText = this.__activeQuery.suggestionList[this.__hilitedSuggestion]
                                   .getCompletionText(selObj);
     this.updateInput(suggText,
-                     context,
-                     previewBlock);
+                     context);
 
     return suggText;
   },
