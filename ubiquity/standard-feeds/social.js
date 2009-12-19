@@ -1,44 +1,57 @@
-/* TODO
+﻿/* TODO
 From Abi:
 	I think the ones I most often use would be to check the current status
 	of a specific friend (or maybe, the last 3 statuses). The ability to
 	check your friends timeline as a whole would also be nice.
-
-
 */
 
-// max of 140 chars is recommended, but it really allows 160... but that gets truncated on some displays? grr
+// max of 140 chars is recommended, but it really allows 160...
+// but that gets truncated on some displays? grr
 const TWITTER_STATUS_MAXLEN = 140;
 
+// TODO should there also be a "share" overlord verb with
+// providers "using twitter", "using digg", etc.
 
 CmdUtils.CreateCommand({
-  name: "twitter",
-  synonyms: ["tweet"],
-  icon: "http://assets3.twitter.com/images/favicon.ico",
-  takes: {status: noun_arb_text},
-  modifiers: { "as" : noun_type_twitter_user },
-  description: "Sets your Twitter status to a message of at most 160 characters.",
-  help: "Sets your Twitter status to a message of at most 160 characters. You'll need a <a href=\"http://twitter.com\">Twitter account</a>, obviously.  If you're not already logged in" +
-        " you'll be asked to log in.",
-  preview: function(previewBlock, directObj, mods) {
-    // these are converted in the Twitter database anyway, and counted as 4 characters
-    var statusText = directObj.text
-	  .replace("<", "&lt;")
-	  .replace(">", "&gt;");
-    var usernameText = null;
-    if (mods.as) {
-      usernameText = mods.as.text;
+  names: ["twitter", "tweet", "share using twitter"],
+  //ja: ["呟く","呟け","呟いて","つぶやく","つぶやけ","つぶやいて"]
+  arguments: [
+    {role: "object", label: 'status', nountype: noun_arb_text},
+    {role: "alias", nountype: noun_type_twitter_user}
+  ],
+  icon: "chrome://ubiquity/skin/icons/twitter.ico",
+  description:
+  "Sets your Twitter status to a message of at most 160 characters.",
+  help: ("You'll need a <a href=\"http://twitter.com\">Twitter account</a>," +
+         " obviously.  If you're not already logged in" +
+         " you'll be asked to log in."),
+  preview: function(previewBlock, args) {
+    var statusText = (args.object ? args.object.text : '');
+    var usernameText = "";
+    if (args.alias) {
+      usernameText = args.alias.text;
+    } else if (args.as) {
+      usernameText = args.as.text;
     }
-
-    var previewTemplate = "Updates your Twitter status ${username} to: <br /><b>${status}</b> <br /><br />Characters remaining: <b>${chars}</b> <p style='font-size:11px'> tip: tweet @mozillaubiquity for help </p>";
-    var truncateTemplate = "<span style='color: red;'><br />The last <b>${truncate}</b> characters will be truncated!</span>";
+    if (usernameText[0] == '@')
+      usernameText = usernameText.slice(1);
+    
+    var previewTemplate = (
+      "<div class='twitter'>"+_("Updates your Twitter status ${username} to:")+"<br/>" +
+      "<b class='status'>${status}</b><br/><br/>" +
+      _("Characters remaining: <b>${chars}</b>") +
+      "<p><small>"+_("tip: tweet @mozillaubiquity for help")+"</small></p></div>");
+    var truncateTemplate = (
+      "<strong>"+_("The last <b>${truncate}</b> characters will be truncated!")+"</strong>");
     var previewData = {
-      status: statusText,
-      username: usernameText ? ("(For user <b>" + usernameText + "</b>)"):"",
+      status: <>{statusText}</>.toXMLString(),
+      username: usernameText && _("(For user <b>${usernameText}</b>)"),
       chars: TWITTER_STATUS_MAXLEN - statusText.length
     };
 
-    var previewHTML = CmdUtils.renderTemplate(previewTemplate, previewData);
+    var previewHTML = CmdUtils.renderTemplate(
+                        CmdUtils.renderTemplate(previewTemplate, previewData),
+                        {usernameText:usernameText});
 
     if (previewData.chars < 0) {
       var truncateData = {
@@ -50,10 +63,10 @@ CmdUtils.CreateCommand({
 
     previewBlock.innerHTML = previewHTML;
   },
-  execute: function(directObj, mods) {
-    var statusText = directObj.text;
+  execute: function(args) {
+    var statusText = args.object.text;
     if(statusText.length < 1) {
-      displayMessage("Twitter requires a status to be entered");
+      this._show(_("requires a status to be entered"));
       return;
     }
 
@@ -61,9 +74,10 @@ CmdUtils.CreateCommand({
     var updateParams = {
       source: "ubiquity",
       status: statusText
-      //dont cut the input since sometimes, the user selects a big url, and the total lenght is more than 140, but
-      // tinyurl takes care of that
+      //dont cut the input since sometimes, the user selects a big url,
+      //and the total lenght is more than 140, but tinyurl takes care of that
     };
+    var me = this;
 
     function sendMessage() {
       jQuery.ajax({
@@ -72,13 +86,12 @@ CmdUtils.CreateCommand({
         data: updateParams,
         dataType: "json",
         error: function() {
-          displayMessage("Twitter error - status not updated");
+          me._show(_("error - status not updated"));
         },
         success: function() {
-          var msg = updateParams.status.match(/^d /) ?
-                    "Twitter direct message sent" :
-                    "Twitter status updated";
-          displayMessage(msg);
+          me._show(/^d /.test(statusText)
+                   ? _("direct message sent")
+                   : _("status updated"));
         },
         username: login.username,
         password: login.password
@@ -86,55 +99,54 @@ CmdUtils.CreateCommand({
     }
 
     var login;
-    if (mods.as && mods.as.text && mods.as.data) {
-      login = mods.as.data;
+    var alias = args.alias;
+    if (alias && alias.text && alias.data) {
+      login = alias.data;
       sendMessage();
     } else {
       login = {username: null,
                password: null};
-      if (mods.as && mods.as.text)
-        login.username = mods.as.text;
+      if (alias && alias.text)
+        login.username = alias.text;
       sendMessage();
     }
+  },
+  _show: function(txt){
+    displayMessage({icon: this.icon, title: this.name, text: txt});
   }
 });
 
+// TODO this should take arguments -- url (defaulting to current page)
+// optional commentary, and alias?
 CmdUtils.CreateCommand({
-  name: "digg",
-  synonyms: ["share-on-digg"],
-  icon: "http://digg.com/favicon.ico",
+  names: ["digg","share using digg"],
+  icon: "chrome://ubiquity/skin/icons/digg.ico",
   homepage: "http://www.gialloporpora.netsons.org",
   description: "If not yet submitted, submits the page to Digg. Otherwise, it takes you to the story's Digg page.",
   author: { name: "Sandro Della Giustina", email: "sandrodll@yahoo.it"},
   license: "MPL,GPL",
   execute: function() {
-    var doc = CmdUtils.getDocument();
-    var sel = doc.getSelection().substring(0,375);
-
-
-    var params = Utils.paramsToString({
-      phase: "2",
-      url: doc.location,
-      title: doc.title,
-      bodytext: sel
-    });
-
-    story_url='http://digg.com/submit' + params;
-    Utils.openUrlInBrowser(story_url);
-
+    var win = CmdUtils.getWindow();
+    var sel = win.getSelection().toString().slice(0, 375);
+    Utils.openUrlInBrowser("http://digg.com/submit" +
+                           Utils.paramsToString({
+                             phase: "2",
+                             url: win.location.href,
+                             title: win.document.title,
+                             bodytext: sel,
+                           }));
   },
   preview: function(pblock) {
-
-    var doc = CmdUtils.getDocument();
-    var selected_text= doc.getSelection();
+    var win = CmdUtils.getWindow();
+    var selected_text = win.getSelection() + "";
     var api_url='http://services.digg.com/stories';
 
     var params = Utils.paramsToString({
       appkey: "http://www.gialloporpora.netsons.org",
-      link: doc.location
+      link: win.location.href,
     });
 
-    var html= 'Submit or digg this page. Checking if this page has already been submitted...';
+    var html= _('Submit or digg this page. Checking if this page has already been submitted...');
     pblock.innerHTML = html;
 
     CmdUtils.previewAjax(pblock, {
@@ -148,17 +160,15 @@ CmdUtils.CreateCommand({
         var diggs = el.attr("diggs");
 
         if (diggs == null){
-          html = 'Submit this page to Digg';
+          html = _('Submit this page to Digg');
           if (selected_text.length > 0) {
-            html += " with the description:<br/> <i style='padding:10px;color: #CCC;display:block;'>" + selected_text + "</i>";
+            html = _("Submit this page to Digg with the description:")+"<br/> <i style='padding:10px;color: #CCC;display:block;'>" + selected_text + "</i>";
             if (selected_text.length > 375){
-              html +='<br/> Description can only be 375 characters. The last <b>'
-              + (selected_text.length - 375) + '</b> characters will be truncated.';
+              html +='<br/> '+_('Description can only be 375 characters. The last <b>${chars}</b> characters will be truncated.',{chars:(selected_text.length - 375)});
             }
           }
-        }
-        else{
-          html = 'Digg this page. This page already has <b>'+diggs+'</b> diggs.';
+        } else {
+          html = _('Digg this page. This page already has <b>${diggs}</b> diggs.',{diggs:diggs});
         }
         pblock.innerHTML = html;
       }
@@ -167,27 +177,38 @@ CmdUtils.CreateCommand({
 });
 
 CmdUtils.CreateCommand({
-  name: "tinyurl",
-  takes: {"url to shorten": noun_type_url},
-  icon: "http://tinyurl.com/favicon.ico",
-  description: "Replaces the selected URL with a <a href=\"http://www.tinyurl.com\">TinyUrl</a>",
-  preview: function( pblock, urlToShorten ){
-    pblock.innerHTML = "Replaces the selected URL with a TinyUrl.";
-    var baseUrl = "http://tinyurl.com/api-create.php?url=";
-    pblock.innerHTML = "Replaces the selected URL with ",
-    jQuery.get( baseUrl + urlToShorten.text, function( tinyUrl ) {
-      if(tinyUrl != "Error") pblock.innerHTML += tinyUrl;
+  names: ["tinyurl"],
+  arguments: noun_type_url,
+  icon: "chrome://ubiquity/skin/icons/tinyurl.ico",
+  description: ("Replaces the selected URL with a " +
+                "<a href=\"http://www.tinyurl.com\">TinyURL</a>."),
+  preview: function(pblock, {object: {text}}){
+    if (!text) {
+      pblock.innerHTML = this.description;
+      return;
+    }
+    var me = this;
+    pblock.innerHTML = _("Replaces the selected URL with...");
+    CmdUtils.previewGet(pblock, this._api(text), function(tinyUrl) {
+      if(tinyUrl !== "Error")
+        pblock.innerHTML = _("Replaces the selected URL with <b>${tinyurl}</b>.",
+                             {tinyurl:me._link(tinyUrl)});
     });
   },
-  execute: function( urlToShorten ) {
-    //escaping urlToShorten will not create the right tinyurl
-    var baseUrl = "http://tinyurl.com/api-create.php?url=";
-    jQuery.get( baseUrl + urlToShorten.text, function( tinyUrl ) {
-      CmdUtils.setSelection( tinyUrl );
+  execute: function(args) {
+    var me = this;
+    jQuery.get(this._api(args.object.text), function(tinyUrl) {
+      CmdUtils.setSelection(me._link(tinyUrl), {text: tinyUrl});
+      Utils.clipboard.text = tinyUrl;
     });
-  }
+  },
+  _api: function(url)("http://tinyurl.com/api-create.php?url=" +
+                      encodeURIComponent(url)),
+  _link: function(url) {
+    var eu = Utils.escapeHtml(url);
+    return eu.link(eu);
+  },
 });
-
 
 /**
  * share-on-delicious - an Ubiquity command for sharing bookmarks on
@@ -209,12 +230,10 @@ var uext = Application.extensions.get('ubiquity@labs.mozilla.com');
 var cookie_mgr = Components.classes["@mozilla.org/cookiemanager;1"]
     .getService(Components.interfaces.nsICookieManager);
 
-CmdUtils.CreateCommand({
-
-    name:
-        'share-on-delicious',
-    icon:
-        'http://delicious.com/favicon.ico',
+CmdUtils.CreateCommand(
+  {
+    names: ["share (on delicious)", "delicious"],
+    icon: "chrome://ubiquity/skin/icons/delicious.ico",
     description:
         'Share the current page as a bookmark on delicious.com',
     help:
@@ -233,12 +252,15 @@ CmdUtils.CreateCommand({
     },
     license:
         'MPL/GPL/LGPL',
-
-    takes: { notes: noun_arb_text },
-    modifiers: {
-        tagged:   noun_arb_text,
-        entitled: noun_arb_text
-    },
+    arguments: [{role: "object",
+                 nountype: noun_arb_text,
+                 label: "notes"},
+                {role: "alias",
+                 nountype: noun_arb_text,
+                 label: "title"},
+                {role: "instrument",
+                 nountype: noun_arb_text,
+                 label: "tags"}],
 
     /**
      * Command configuration settings.
@@ -256,9 +278,9 @@ CmdUtils.CreateCommand({
      * Present a preview of the bookmark under construction during the course
      * of composing the command.
      */
-    preview: function(pblock, input_obj, mods) {
+    preview: function(pblock, arguments) {
 
-        var bm          = this._extractBookmarkData(input_obj, mods);
+        var bm          = this._extractBookmarkData(arguments);
         var user_cookie = this._getUserCookie();
         var user_name   = (user_cookie) ? user_cookie.split(' ')[0] : '';
 
@@ -266,51 +288,57 @@ CmdUtils.CreateCommand({
 
         var tmpl;
 
-        if (!user_name) {
+        var delicious = '<img src="http://delicious.com/favicon.ico"> '
+                        +'<b><a style="color: #3774D0" href="http://delicious.com">delicious.com</a></b>';
 
-            // If there's no user name, there's no login, so this command won't work.
-            tmpl = [
-                '<p style="color: #d44">No active user found - log in at ',
-                '<img src="http://delicious.com/favicon.ico"> ',
-                '<b><a style="color: #3774D0" href="http://delicious.com">delicious.com</a></b> ',
-                'to use this command.</p>'
-            ].join('');
+        if (!bm.bookmarkable) {
+          tmpl = '<p class="error">'
+                 + _('This URL cannot be shared on ${delicious}.',{delicious:delicious})
+                 + '</p>';
+        } else if (!user_name) {
+
+          // If there's no user name, there's no login, so this command won't work.
+          tmpl = '<p class="error">' +
+                 _("No active user found - log in at ${delicious} to use this command.",
+                   {delicious:delicious})
+                 + '</p>';
 
         } else if (!bm.description) {
 
-            // If there's no title, somehow, then this is an error too.
-            tmpl = [
-                '<p style="color: #d44">A title is required for bookmarks on ',
-                '<b><a style="color: #3774D0" href="http://delicious.com">delicious.com</a></b> ',
-                '</p>'
-            ].join('');
+          // If there's no title, somehow, then this is an error too.
+          tmpl = '<p style="color: #d44">'
+                 + _("A title is required for bookmarks on ${delicious}",
+                     {delicious:'<b><a style="color: #3774D0" href="http://delicious.com">delicious.com</a></b>'})
+                 + '</p>';
 
         } else {
 
-            // Attempt to construct a vaguely delicious-esque preview of a bookmark.
-            tmpl = [
-                '<style type="text/css">',
-                    '.preview a { color: #3774D0 }',
-                    '.del-bookmark { font: 12px arial; color: #ddd; background: #eee; line-height: 1.25em }',
-                    '.del-bookmark a.title { color: #1259C7 }',
-                    '.del-bookmark .full-url { color: #396C9B; font-size: 12px; display: block; padding: 0.25em 0 }',
-                    '.del-bookmark .notes { color: #4D4D4D }',
-                    '.del-bookmark .tags { color: #787878; padding-top: 0.25em; text-align: right }',
-                '</style>',
-                '<div class="preview">',
-                    '<p>Share a bookmark at <img src="http://delicious.com/favicon.ico"> ',
-                        '<b><a href="http://delicious.com/${user_name}">delicious.com/${user_name}</a></b>:</p>',
-                    '<div class="del-bookmark">',
-                        '<div style="padding: 1em;">',
-                        '<a class="title" href="${bm.url}">${bm.description}</a>',
-                        '<a class="full-url" href="${bm.url}">${bm.url}</a>',
-                        bm.extended ?
-                            '<div class="notes">${bm.extended}</div>' : '',
-                        bm.tags ?
-                            '<div class="tags"><span>tags:</span> ${bm.tags}</div>' : '',
-                    '</div>',
-                '</div>'
-            ].join("\n");
+          delicious = '<img src="http://delicious.com/favicon.ico"> '
+                         +'<b><a href="http://delicious.com/${user_name}">delicious.com/${user_name}</a></b>';
+
+          // Attempt to construct a vaguely delicious-esque preview of a bookmark.
+          tmpl = [
+            '<style type="text/css">',
+              '.preview a { color: #3774D0 }',
+              '.del-bookmark { font: 12px arial; color: #ddd; background: #eee; line-height: 1.25em }',
+              '.del-bookmark a.title { color: #1259C7 }',
+              '.del-bookmark .full-url { color: #396C9B; font-size: 12px; display: block; padding: 0.25em 0 }',
+              '.del-bookmark .notes { color: #4D4D4D }',
+              '.del-bookmark .tags { color: #787878; padding-top: 0.25em; text-align: right }',
+            '</style>',
+            '<div class="preview">',
+              '<p>'+_('Share a bookmark at ${delicious}:', {delicious:delicious})+'</p>',
+              '<div class="del-bookmark">',
+                '<div style="padding: 1em;">',
+                '<a class="title" href="${bm.url}">${bm.description}</a>',
+                '<a class="full-url" href="${bm.url}">${bm.url}</a>',
+                bm.extended ?
+                  '<div class="notes">${bm.extended}</div>' : '',
+                bm.tags ?
+                  '<div class="tags"><span>tags:</span> ${bm.tags}</div>' : '',
+              '</div>',
+            '</div>'
+          ].join("\n");
 
         }
 
@@ -321,29 +349,33 @@ CmdUtils.CreateCommand({
      * Attempt to use the delicious v1 API to post a bookmark using the
      * command input
      */
-    execute: function(input_obj, mods) {
-        var bm          = this._extractBookmarkData(input_obj, mods);
+    execute: function(arguments) {
+        var bm          = this._extractBookmarkData(arguments);
         var user_cookie = this._getUserCookie();
         var user_name   = (user_cookie) ? user_cookie.split(' ')[0] : '';
 
+        if (!bm.bookmarkable) {
+          displayMessage(_('This URL cannot be shared on delicious.'));
+          return false;
+        }
+
         if (!user_name) {
-            // If there's no user name, there's no login, so this command won't work.
-            displayMessage('No active user found - log in at delicious.com ' +
-                'to use this command.');
-            return false;
+          // If there's no user name, there's no login, so this command won't work.
+          displayMessage(_('No active user found - log in at delicious.com to use this command.'));
+          return false;
         }
 
         if (!bm.description) {
-            // If there's no title, somehow, then this is an error too.
-            displayMessage("A title is required for bookmarks at delicious.com");
-            return false;
+          // If there's no title, somehow, then this is an error too.
+          displayMessage(_("A title is required for bookmarks at delicious.com"));
+          return false;
         }
 
         var path = '/v1/posts/add';
         var url  = this._config.api_base + path;
 
         var req = Components.classes["@mozilla.org/xmlextras/xmlhttprequest;1"].
-            createInstance();
+                   createInstance();
 
         req.open('POST', url, true);
 
@@ -351,14 +383,12 @@ CmdUtils.CreateCommand({
         var onload, onerror;
 
         req.onload  = onload  = function(ev) {
-            displayMessage('Bookmark "' + bm.description + '" ' +
-                'shared at delicious.com/' + user_name);
+          displayMessage(_('Bookmark "${description}" shared at delicious.com/${user_name}',{description:bm.description,user_name:user_name}));
         }
 
         req.onerror = onerror = function(ev) {
-            // TODO: more informative reporting on errors
-            displayMessage('ERROR: Bookmark "' + bm.description + '" ' +
-                ' NOT shared on delicious.com/' + user_name);
+          // TODO: more informative reporting on errors
+          displayMessage(_('ERROR: Bookmark "${description}" NOT shared on delicious.com/${user_name}',{description:bm.description,user_name:user_name}));
         }
 
         // TODO: implement timeout here, in case requests take too long.
@@ -380,18 +410,21 @@ CmdUtils.CreateCommand({
      * Given input data and modifiers, attempt to assemble data necessary to
      * post a bookmark.
      */
-    _extractBookmarkData: function(input_obj, mods) {
+    _checkBookmarkable: new RegExp('^https?://'),
+    _extractBookmarkData: function(args) {
         return {
             _user:
                 this._getUserCookie(),
             url:
                 context.focusedWindow.location,
+            bookmarkable:
+                this._checkBookmarkable.test(context.focusedWindow.location),
             description:
-                mods.entitled.text || context.focusedWindow.document.title,
+                args.alias.text || context.focusedWindow.document.title,
             extended:
-                input_obj.text ? '"' + input_obj.text + '"' : '',
+                args.object.text ? '"' + args.object.text + '"' : '',
             tags:
-                mods.tagged.text
+               args.instrument.text
         };
     },
 
@@ -425,144 +458,3 @@ CmdUtils.CreateCommand({
 
 });
 
-// max 100 chars for question
-const RYPPLE_QUESTION_MAXLEN = 100;
-const RYPPLE_ATTRIBUTE_MAX = 3;
-
-CmdUtils.CreateCommand({
-  name: "rypple-ask",
-  synonym: "ask-rypple",
-  takes: {"question": noun_arb_text},
-  icon: "https://www.rypple.com/feedback/images/favicon.ico",
-  description: "Asks a question on Rypple",
-  help: "You'll need a <a href=\"http://rypple.com\">Rypple account</a> and be logged in",
-  homepage: "http://www.rypple.com/ubiquity/ask.html",
-
-  _parse: function (character, text) {
-    // parse text
-    var values = [];
-    var startIndex = 0;
-    var textLeft = '';
-    var lastIndex = startIndex;
-    do {
-      startIndex = text.indexOf(character, endIndex);
-      var endIndex = startIndex;
-      if (startIndex >= 0) {
-        var endIndex = text.indexOf(' ', startIndex);
-        if (endIndex < 0) {
-          endIndex = text.length;
-        }
-        var value = text.substring(startIndex + 1, endIndex);
-        if (value.length > 0) {
-          values.push(value);
-        }
-
-        textLeft += text.substring(lastIndex, startIndex);
-        lastIndex = endIndex + 1;
-      }
-    } while (startIndex >= 0);
-
-    // concat last chunk of text after last found item
-    if (lastIndex != text.length) {
-      textLeft += text.substring(lastIndex, text.length);
-    }
-
-    var parsed = [];
-    parsed.values = values;
-    parsed.textLeft = textLeft;
-    return parsed;
-  },
-
-  preview: function( previewBlock, entry ) {
-    // parse entry text
-    var parsedContacts = this._parse('@', entry.text);
-    var parsedAttr = this._parse('#', parsedContacts.textLeft);
-    var question = parsedAttr.textLeft;
-
-    // output preview
-    var template = '{if errorMsg}<span style="color: red;"><br />${errorMsg}<br/></span>{/if}';
-    template +=    '<b>Asks the following question (${charsLeft} characters left):</b><br/>';
-    template +=    '{if question != ""}${question}{else}NO QUESTION. PLEASE ENTER A QUESTION.{/if}<br/>';
-    template +=    '<br/>';
-    template +=    '<b>To:</b><br/>';
-    template +=    '{for c in contacts}${c}, {forelse}NO RECIPIENTS. YOU MUST ENTER AT LEAST ONE.{/for}<br/>';
-    template +=    '<br/>';
-    template +=     '<b>Attributes:</b><br/>';
-    template +=    '{for a in attributes}${a}, {forelse}NO ATTRIBUTES. YOU MUST ENTER AT LEAST ONE.{/for}<br/>';
-    template +=    '<br/>';
-    template +=    '<br/>';
-    template +=    '<hr/>';
-    template +=    '<b>Usage:</b><br/>';
-    template +=    'rypple-ask &lt;question&gt; &lt;recipient(s)&gt; &lt;attribute(s)&gt;<br/>';
-    template +=    'Recipients must start with \'@\' and at least one recipient is required.<br/>';
-    template +=    'Attributes must start with \'#\' and at least one attribute is required.<br/>';
-
-    var charsLeft = RYPPLE_QUESTION_MAXLEN - question.length;
-    var errorMsg = "";
-    if (charsLeft < 0) {
-        errorMsg += "The last <b>" + charsLeft * -1 + "</b> character(s) of your question will be truncated!<br/>";
-    }
-    if (parsedAttr.values.length > RYPPLE_ATTRIBUTE_MAX) {
-        errorMsg += "The last <b>" + (parsedAttr.values.length - RYPPLE_ATTRIBUTE_MAX) + "</b> attributes(s) will not be used!<br/>";
-    }
-    var data = {
-      question : question,
-      contacts : parsedContacts.values,
-      attributes : parsedAttr.values,
-      charsLeft: charsLeft,
-      errorMsg : errorMsg
-    };
-
-    previewBlock.innerHTML = CmdUtils.renderTemplate( template, data );
-  },
-
-  //TODO email format validation, tags w/ spaces, msg format: @ character, advice/rated
-  execute: function(entry) {
-    // parse entry text
-    var parsedContacts = this._parse('@', entry.text);
-    var parsedAttr = this._parse('#', parsedContacts.textLeft);
-    var question = parsedAttr.textLeft;
-
-    // validation
-    if (parsedContacts.values.length < 1) {
-      displayMessage("At least one recipient is required");
-      return;
-    }
-    if (parsedAttr.values.length < 1) {
-      displayMessage("At least one attribute is required");
-      return;
-    }
-    if (question.length < 1) {
-      displayMessage("No question specified");
-      return;
-    }
-
-    var updateUrl = "https://www.rypple.com/feedback/api/v1/feedback";
-
-    var updateParams = {
-      recipients: parsedContacts.values,
-      attributes: parsedAttr.values.slice(0,RYPPLE_ATTRIBUTE_MAX),
-      title: question.substring(0, RYPPLE_QUESTION_MAXLEN),
-      type: "ADVICE"
-    };
-
-    jQuery.ajax({
-      type: "POST",
-      processData: false,
-      contentType: "application/json",
-      url: updateUrl,
-      data: Utils.encodeJson(updateParams),
-      dataType: "json",
-      error: function() {
-          displayMessage("Rypple error - are you logged in?");
-      },
-      success: function(returnValue ) {
-        if (returnValue.success) {
-          displayMessage("Asked Question Successfully on Rypple");
-        } else {
-          displayMessage("Rypple error - are you logged in?");
-        }
-      }
-    });
-  }
-});

@@ -2,6 +2,28 @@
 //
 // This is the command feed for core developer commands.
 
+// === {{{run unit tests}}} command ===
+//
+// Runs the unit test suite.
+
+CmdUtils.CreateCommand({
+  names: ["test", "unit test", "run unit tests"],
+  icon: "chrome://ubiquity/skin/icons/application_view_list.png",
+  description: "Run the Ubiquity unit test suite",
+  execute: "chrome://ubiquity/content/test.html"
+});
+
+// === {{{playpen}}} command ===
+//
+// Opens the parser playpen.
+
+CmdUtils.CreateCommand({
+  names: ["playpen", "parser playpen", "open parser playpen"],
+  icon: "chrome://ubiquity/skin/icons/application_view_list.png",
+  description: "Go to the parser playpen",
+  execute: "chrome://ubiquity/content/playpen.html"
+});
+
 // === {{{markupTickets()}}} ===
 //
 // This function finds any text in the given JQuery query that looks like

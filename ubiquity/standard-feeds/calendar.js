@@ -1,102 +1,133 @@
-function reloadGoogleCalendarTabs() {
-  try {
-    var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"].getService(Components.interfaces.nsIWindowMediator);
-    var enumerator = wm.getEnumerator(Utils.appWindowType);
-    while(enumerator.hasMoreElements()) {
-      var win = enumerator.getNext();
-      var index = 0, numTabs = win.getBrowser().mPanelContainer.childNodes.length;
-      while (index < numTabs) {
-      	var currentTab = win.getBrowser().getBrowserAtIndex(index);
-      	if(currentTab.currentURI.spec.indexOf("google.com/calendar") > -1) {
-      	  currentTab.reload();
-      	}
-      	index++;
-      }
-    }
-  } catch(e) {
-    displayMessage("Error reloading calendar tabs: " + e);
-  }
-}
+const Apology = ("<p>" +
+                 "Currently, only works with " +
+                 "Google Calendar".link("http://calendar.google.com") +
+                 " so you'll need a Google account to use it." +
+                 "</p>");
 
-
-function addToGoogleCalendar(eventString) {
-
-  var quickAddEntry = "<entry xmlns='http://www.w3.org/2005/Atom' xmlns:gCal='http://schemas.google.com/gCal/2005'>";
-  quickAddEntry += "    <content type=\"html\">" + eventString + "</content>";
-  quickAddEntry += "    <gCal:quickadd value=\"true\"/>";
-  quickAddEntry += "</entry>";
-
-  var authKey = Utils.getCookie(".www.google.com", "CAL");
-  if (authKey == "") {
-    displayMessage("Please make sure you are logged in to Google Calendar");
-    return;
-  }
-
-  var currentCalendar = "http://www.google.com/calendar/feeds/default/private/full";
-
-  var req = new XMLHttpRequest();
-  req.open('POST', currentCalendar, false);
-  req.setRequestHeader('Authorization', 'GoogleLogin auth=' + authKey);
-  req.setRequestHeader('Content-type', 'application/atom+xml');
-  req.send(quickAddEntry);
-  if (req.status == 401) {
-    displayMessage("Please make sure you are logged in to Google Calendar");
-    return;
-  } else if (req.status != 201) {
-    displayMessage("Error creating the event. Error code: " + req.status + " " + req.statusText);
-    return;
-  }
-
-}
-
-/* TODO this command just takes unstructured text right now and relies on
- Google Calendar to figure it out.  So we're not using the DateNounType
- here.  Should we be; is there a better name for this command? */
 CmdUtils.CreateCommand({
-  name: "add-to-calendar",
-  takes: {"event": noun_arb_text}, // TODO: use DateNounType or EventNounType?
-  icon : "chrome://ubiquity/skin/icons/calendar_add.png",
-  preview: "Adds the event to Google Calendar.<br/> Enter the event naturally e.g., \"3pm Lunch with Myk and Thunder\", or \"Jono's Birthday on Friday\".",
+  names: ["add to google calendar", "quick add"],
+  argument: {object_event: noun_arb_text},
+  serviceDomain: "calendar.google.com",
+  icon: "chrome://ubiquity/skin/icons/calendar_add.png",
   description: "Adds an event to your calendar.",
-  help: "Currently, only works with <a href=\"http://calendar.google.com\">Google Calendar</a>, so you'll need a " +
-        "Google account to use it.  Try issuing &quot;add lunch with dan tomorrow&quot;.",
-  execute: function( eventString ) {
-    addToGoogleCalendar( eventString.text );
+  help: (
+    <>
+    <a href="http://www.google.com/support/calendar/bin/answer.py?answer=36604"
+    title="Quick Add">Enter the event naturally</a>. e.g.:
+    <ul>
+    <li>3pm Lunch with Myk and Thunder</li>
+    <li>Jono&#39;s Birthday on Friday</li>
+    </ul>
+    </>) + Apology,
+  execute: function qa_execute(args) {
+    var event = args.object.text;
+    var authKey = Utils.getCookie(".www.google.com", "CAL");
+    var me = this;
+    function needLogin() {
+      me._say(_("Authorization error"),
+              _("Please make sure you are logged in to Google Calendar"));
+    }
+    if (!authKey) {
+      needLogin();
+      return;
+    }
+    var req = new XMLHttpRequest;
+    req.open("POST", "https://www.google.com/calendar/"
+                     + "feeds/default/private/full", false);
+    req.setRequestHeader("Authorization", "GoogleLogin auth=" + authKey);
+    req.setRequestHeader("Content-type", "application/atom+xml");
+    req.send(<entry xmlns="http://www.w3.org/2005/Atom"
+                    xmlns:gCal="http://schemas.google.com/gCal/2005">
+               <content type="text">{event}</content>
+               <gCal:quickadd value="true"/>
+             </entry>.toXMLString());
+    switch (req.status) {
+      case 201:
+      this._say(_("Event created"),
+                req.responseXML.getElementsByTagName("title")[0].textContent);
+      Utils.tabs.reload(/^https?:\/\/www\.google\.com\/calendar\b/);
+      break;
+
+      case 401:
+      needLogin();
+      break;
+
+      default:
+      this._say(_("Error creating the event"),
+                req.status + " " + req.statusText);
+    }
+  },
+  preview: function qa_preview(pb, {object: {html}}) {
+    pb.innerHTML = html || this.previewDefault();
+  },
+  _say: function qa__say(title, text) {
+    displayMessage({
+      icon: this.icon,
+      title: this.name + ": " +  title,
+      text: text,
+    });
   }
 });
 
-
-// TODO: Don't do a whole-sale copy of the page ;)
-function checkCalendar(pblock, date) {
-  var url = "http://www.google.com/calendar/m";
-  var params = Utils.paramsToString({ as_sdt: date.toString("yyyyMMdd") });
-
-  Utils.ajaxGet(url + params, function(html) {
-    pblock.innerHTML = html;
+function linksToButtons($links) {
+  var keys = ["P", "N"];
+  if ($links.length > 2) keys.splice(1, 0, "T");
+  $links.each(function eachLink(i) {
+    var txt = this.textContent, key = keys[i];
+    if (txt[0] !== key) txt += " (" + key + ")";
+    jQuery(this).replaceWith(<button value={this.href} accesskey={key}
+                             >{txt}</button>.toXMLString());
   });
 }
 
+function dateParam(date) ({as_sdt: date.toString("yyyyMMdd")});
+
+// TODO this should take a plugin argument specifying the calendar provider.
 CmdUtils.CreateCommand({
-  name: "check-calendar",
-  takes: {"date to check": noun_type_date},
+  names: ["check google calendar"],
+  argument: {object: noun_type_date},
+  serviceDomain: "calendar.google.com",
   icon : "chrome://ubiquity/skin/icons/calendar.png",
   description: "Checks what events are on your calendar for a given date.",
-  help: "Currently, only works with <a href=\"http://calendar.google.com\">Google Calendar</a>, so you'll need a " +
-        "Google account to use it.  Try issuing &quot;check thursday&quot;.",
-  execute: function( directObj ) {
-    var date = directObj.data;
-    var url = "http://www.google.com/calendar/m";
-    var params = Utils.paramsToString({ as_sdt: date.toString("yyyyMMdd") });
-
-    Utils.openUrlInBrowser( url + params );
+  help: 'Try issuing "check on thursday"' + Apology,
+  execute: function gcale_execute({object: {data}}) {
+    Utils.openUrlInBrowser("https://www.google.com/calendar/" +
+                           Utils.paramsToString(dateParam(data)));
   },
-  preview: function( pblock, directObj ) {
-    var date = directObj.data;
-    if (date) {
-      pblock.innerHTML = "Checks Google Calendar for events on " +
-                         date.toString("dddd, dS MMMM, yyyy") + ".";
-      checkCalendar( pblock, date );
-    } else
-      pblock.innerHTML = "Checks Google Calendar for the date you specify.";
-  }
+  // url is for recursing pagination
+  preview: function gcale_preview(pblock, args, url) {
+    var date = args.object.data, me = this;
+    if (!date) {
+      pblock.innerHTML = this.description;
+      return;
+    }
+    pblock.innerHTML = _("Checking Google Calendar for events on ${date}.",
+                         {date: date.toString("dddd, dS MMMM, yyyy")});
+    CmdUtils.previewGet(
+      pblock,
+      url || "https://www.google.com/calendar/m",
+      dateParam(date),
+      function getCalendar(htm) {
+        var [cal] = /<div class[^]+$/(htm) || 0;
+        if (!cal) {
+          pblock.innerHTML = _(
+            'Please <a href="${url}" accesskey="L">Login</a>.', this);
+          return;
+        }
+        var $c = CmdUtils.absUrl(
+          (jQuery('<div class="calendar">' + cal).eq(0)
+           .find(".c1:nth(1), form, span").remove().end()),
+          this.url);
+        linksToButtons($c.find(".c1 > a"));
+        $c.find("button").focus(function btn() {
+          this.blur();
+          this.disabled = true;
+          gcale_preview.call(me, pblock, args, this.value);
+          return false;
+        });
+        pblock.innerHTML = "";
+        $c.appendTo(pblock);
+      },
+      "text");
+  },
 });

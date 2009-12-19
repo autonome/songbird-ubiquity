@@ -36,6 +36,10 @@
 
 var Ci = Components.interfaces;
 var Cc = Components.classes;
+var Cu = Components.utils;
+
+Cu.import("resource://ubiquity/modules/dbutils.js");
+
 var EXPORTED_SYMBOLS = ["SuggestionMemory"];
 
 var SQLITE_FILE = "ubiquity_suggestion_memory.sqlite";
@@ -118,7 +122,7 @@ SuggestionMemory.prototype = {
       let score = selStmt.getUTF8String(2);
       if (!this._table[input])
 	      this._table[input] = {};
-      this._table[input][suggestion] = score;
+      this._table[input][suggestion] =+ score;
     }
     selStmt.finalize();
   },
@@ -189,6 +193,32 @@ SuggestionMemory.prototype = {
     }
     fetchStmt.finalize();
     return retVals;
+  },
+
+  wipe: function() {
+    // Wipes everything out of this suggestion memory instance.
+    // Be careful with this.
+    let wipeSql = ("DELETE FROM ubiquity_suggestion_memory " +
+                   "WHERE id_string = ?1");
+    let wipeStmt = this._createStatement(wipeSql);
+    wipeStmt.bindUTF8StringParameter(0, this._id);
+    wipeStmt.execute();
+    wipeStmt.finalize();
+  },
+
+  displayAllContents: function() {
+    /* Used for debugging purposes only.*/
+    let input;
+    let choice;
+    let html = "";
+    for (input in this._table) {
+      for (choice in this._table[input]) {
+        let num = this._table[input][choice];
+        html += "<tr><td>" + input + "</td><td>" + choice +
+          "</td><td>" + num + "</td></tr";
+      }
+    }
+    return html;
   }
 
 };
@@ -200,24 +230,14 @@ SuggestionMemory.openDatabase = function openDatabase(file) {
    * has never been initialized, so we'll have to do it now by running
    * the CREATE TABLE sql. */
   // openDatabase will create empty file if it's not there yet:
-  var connection = null;
-  try {
-    connection = _storSvc.openDatabase(file);
-    if (file.fileSize == 0 ||
-        !connection.tableExists("ubiquity_suggestion_memory")) {
-      // empty file? needs initialization!
-      connection.executeSimpleSQL(SQLITE_SCHEMA);
-    }
-  } catch(e) {
-    Components.utils.reportError(
-      "Ubiquity's SuggestionMemory database appears to have been corrupted - resetting it."
-      );
-    if (file.exists()) {
-      // remove currupt database
-      file.remove(false);
-    }
-    connection = _storSvc.openDatabase(file);
-    connection.executeSimpleSQL(SQLITE_SCHEMA);
-  }
+  var connection = DbUtils.openDatabase(file);
+  if(connection)
+    connection = DbUtils.createTable(
+                   connection, "ubiquity_suggestion_memory",
+                   SQLITE_SCHEMA);
   return connection;
 };
+
+/* TODO: Do we need functions for dealing with multiple SuggestionMemory
+ * instances, e.g. listSuggestionMemoryIds() or wipeAllSuggestionMemory()?
+ */

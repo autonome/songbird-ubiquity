@@ -1,17 +1,18 @@
 /* This is a template command. */
 CmdUtils.CreateCommand({
-  name: "example",
-  icon: "http://example.com/example.png",
-  homepage: "http://example.com/",
-  author: {name: "Your Name", email: "you@example.com"},
+  names: ["example"],
+  icon: "http://www.mozilla.com/favicon.ico",
+  description: "A short description of your command.",
+  help: "How to use your command.",
+  author: {name: "Your Name", email: "you@mozilla.com"},
   license: "GPL",
-  description: "A short description of your command",
-  help: "How to use your command",
-  takes: {"input": /.*/},
-  preview: function(pblock, input) {
-    pblock.innerHTML = "Your input is <b>" + input.text + "</b>.";
+  homepage: "http://labs.mozilla.com/",
+  arguments: [{role: 'object', nountype: noun_arb_text}],
+  preview: function preview(pblock, args) {
+    pblock.innerHTML = "Your input is <b>" + args.object.html + "</b>.";
   },
-  execute: function(input) {
-    displayMessage("You selected: " + input.text);
+  execute: function execute(args) {
+    displayMessage("You selected: " + args.object.text, this);
   }
 });
+

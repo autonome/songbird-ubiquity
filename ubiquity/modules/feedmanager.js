@@ -43,10 +43,12 @@
 // feed plugins to reload feeds when they change and expose the
 // functionality of all feeds to client code as {{{Feed}}} objects.
 
-let EXPORTED_SYMBOLS = ["FeedManager"];
+var EXPORTED_SYMBOLS = ["FeedManager"];
 
-Components.utils.import("resource://ubiquity/modules/utils.js");
-Components.utils.import("resource://ubiquity/modules/eventhub.js");
+const Cu = Components.utils;
+
+Cu.import("resource://ubiquity/modules/utils.js");
+Cu.import("resource://ubiquity/modules/eventhub.js");
 
 const FEED_SRC_ANNO = "ubiquity/source";
 const FEED_TYPE_ANNO = "ubiquity/type";
@@ -56,15 +58,10 @@ const FEED_SUBSCRIBED_ANNO = "ubiquity/confirmed";
 const FEED_UNSUBSCRIBED_ANNO = "ubiquity/removed";
 const FEED_SRC_URL_ANNO = "ubiquity/commands";
 const FEED_TITLE_ANNO = "ubiquity/title";
+const FEED_DATE_ANNO = "ubiquity/date";
+const FEED_BIN_ANNO = "ubiquity/bin";
 
-const FEED_ANNOS = [FEED_SRC_ANNO,
-                    FEED_TYPE_ANNO,
-                    FEED_AUTOUPDATE_ANNO,
-                    FEED_BUILTIN_ANNO,
-                    FEED_SUBSCRIBED_ANNO,
-                    FEED_UNSUBSCRIBED_ANNO,
-                    FEED_SRC_URL_ANNO,
-                    FEED_TITLE_ANNO];
+const FEED_ANNOS = [this[v] for (v in this) if (/^FEED_/.test(v))];
 
 const DEFAULT_FEED_TYPE = "commands";
 
@@ -83,9 +80,9 @@ function FeedManager(annSvc) {
   this._hub.attachMethods(this);
 }
 
-FeedManager.prototype = FMgrProto = {};
+var FMgrProto = FeedManager.prototype = {};
 
-// === {{{FeedManager.registerPlugin()}}} ===
+// === {{{FeedManager#registerPlugin()}}} ===
 //
 // Registers a feed plugin with the feed manager. For an example feed
 // plugin, see {{{LockedDownFeedPlugin}}}.
@@ -98,7 +95,7 @@ FMgrProto.registerPlugin = function FMgr_registerPlugin(plugin) {
   this._plugins[plugin.type] = plugin;
 };
 
-// === {{{FeedManager.getUnsubscribedFeeds()}}} ===
+// === {{{FeedManager#getUnsubscribedFeeds()}}} ===
 //
 // Returns an Array of {{{Feed}}} objects that represent all feeds
 // that were once subscribed, but are currently unsubscribed.
@@ -114,7 +111,7 @@ FMgrProto.getUnsubscribedFeeds = function FMgr_getUnsubscribedFeeds() {
   return unsubscribedFeeds;
 };
 
-// === {{{FeedManager.getSubscribedFeeds()}}} ===
+// === {{{FeedManager#getSubscribedFeeds()}}} ===
 //
 // Returns an Array of {{{Feed}}} objects that represent all feeds
 // that are currently subscribed.
@@ -128,7 +125,7 @@ FMgrProto.getSubscribedFeeds = function FMgr_getSubscribedFeeds() {
     try {
       subscribedFeeds.push(this.__getFeed(confirmedPages[i]));
     } catch (e) {
-      Components.utils.reportError(
+      Cu.reportError(
         ("An error occurred when retrieving the feed for " +
          confirmedPages[i].spec + ": " + e)
       );
@@ -138,7 +135,26 @@ FMgrProto.getSubscribedFeeds = function FMgr_getSubscribedFeeds() {
   return subscribedFeeds;
 };
 
-// === {{{FeedManager.addSubscribedFeed()}}} ===
+// === {{{FeedManager#getFeedForUrl()}}} ===
+//
+//
+// Returns the feed for the given URL, if it exists. If it doesn't,
+// this function returns null.
+
+FMgrProto.getFeedForUrl = function FMgr_getFeedForUrl(url) {
+  // TODO: This function is implemented terribly inefficiently.
+  var {spec} = Utils.url(url);
+  var feedLists = [this.getSubscribedFeeds(),
+                   this.getUnsubscribedFeeds()];
+
+  for each (let feeds in feedLists)
+    for each (let feed in feeds)
+      if (feed.uri.spec === spec)
+        return feed;
+  return null;
+};
+
+// === {{{FeedManager#addSubscribedFeed()}}} ===
 //
 // Adds a feed with the given information to the {{{FeedManager}}}. The
 // information should be passed as a single Object with keys that
@@ -201,11 +217,14 @@ FMgrProto.addSubscribedFeed = function FMgr_addSubscribedFeed(baseInfo) {
   if (info.isBuiltIn)
     annSvc.setPageAnnotation(uri, FEED_BUILTIN_ANNO, "true", 0,
                              expiration);
+  else
+    annSvc.setPageAnnotation(uri, FEED_DATE_ANNO, new Date().toUTCString(), 0,
+                             expiration);
 
   this._hub.notifyListeners("subscribe", uri);
 };
 
-// === {{{FeedManager.isSubscribedFeed()}}} ===
+// === {{{FeedManager#isSubscribedFeed()}}} ===
 //
 // Returns whether or not the given feed URL is currently being
 // subscribed to.
@@ -216,7 +235,7 @@ FMgrProto.isSubscribedFeed = function FMgr_isSubscribedFeed(uri) {
   return annSvc.pageHasAnnotation(uri, FEED_SUBSCRIBED_ANNO);
 };
 
-// === {{{FeedManager.isSubscribedFeed()}}} ===
+// === {{{FeedManager#isSubscribedFeed()}}} ===
 //
 // Returns whether or not the given feed URL was once subscribed
 // to, but is no longer.
@@ -227,7 +246,7 @@ FMgrProto.isUnsubscribedFeed = function FMgr_isSubscribedFeed(uri) {
   return annSvc.pageHasAnnotation(uri, FEED_UNSUBSCRIBED_ANNO);
 };
 
-// === {{{FeedManager.installToWindow()}}} ===
+// === {{{FeedManager#installToWindow()}}} ===
 //
 // This function installs the feed manager user interface to the
 // given chrome window that represents a web browser.
@@ -245,60 +264,13 @@ FMgrProto.isUnsubscribedFeed = function FMgr_isSubscribedFeed(uri) {
 FMgrProto.installToWindow = function FMgr_installToWindow(window) {
   var self = this;
 
-  function showNotification(plugin, targetDoc, commandsUrl, mimetype) {
-    var Cc = Components.classes;
-    var Ci = Components.interfaces;
-
-    // Find the <browser> which contains notifyWindow, by looking
-    // through all the open windows and all the <browsers> in each.
-    var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
-             getService(Ci.nsIWindowMediator);
-    var enumerator = wm.getEnumerator(Utils.appWindowType);
-    var tabbrowser = null;
-    var foundBrowser = null;
-
-    while (!foundBrowser && enumerator.hasMoreElements()) {
-      var win = enumerator.getNext();
-      tabbrowser = win.getBrowser();
-      foundBrowser = tabbrowser.getBrowserForDocument(targetDoc);
-    }
-
-    // Return the notificationBox associated with the browser.
-    if (foundBrowser) {
-      var box = tabbrowser.getNotificationBox(foundBrowser);
-      var BOX_NAME = "ubiquity_notify_commands_available";
-      var oldNotification = box.getNotificationWithValue(BOX_NAME);
-      if (oldNotification)
-        box.removeNotification(oldNotification);
-
-      function onSubscribeClick(notification, button) {
-        plugin.onSubscribeClick(targetDoc, commandsUrl, mimetype);
-      }
-
-      var buttons = [
-        {accessKey: null,
-         callback: onSubscribeClick,
-         label: "Subscribe...",
-         popup: null}
-      ];
-      box.appendNotification(
-        ("This page contains Ubiquity commands.  " +
-         "If you'd like to subscribe to them, please " +
-         "click the button to the right."),
-        BOX_NAME,
-        "http://www.mozilla.com/favicon.ico",
-        box.PRIORITY_INFO_MEDIUM,
-        buttons
-      );
-    } else {
-      Components.utils.reportError("Couldn't find tab for document");
-    }
-  }
+  this.commandReminderPeriod = Utils.Application.prefs.getValue(
+                              "extensions.ubiquity.commandReminderPeriod", 0);
 
   function onPageWithCommands(plugin, pageUrl, commandsUrl, document,
                               mimetype) {
     if (!self.isSubscribedFeed(pageUrl))
-      showNotification(plugin, document, commandsUrl, mimetype);
+      self.showNotification(plugin, document, commandsUrl, mimetype);
   }
 
   // Watch for any tags of the form <link rel="commands">
@@ -321,20 +293,195 @@ FMgrProto.installToWindow = function FMgr_installToWindow(window) {
 
   window.addEventListener("DOMLinkAdded", onLinkAdded, false);
 
-  for (name in this._plugins) {
+
+  // Watch for when a new page is shown and check if the domain of that
+  // page matches a domain used by any installed commands
+  function onPageShow(event) {
+    var pageDomain = null;
+    try {
+      var pageDomain = event.target.domain;
+    } catch(e) { return; }
+    let notTheseSites = noNotificationSites();
+    if(!notTheseSites.some(function (domainToSkip) domainToSkip == pageDomain)){
+      let cmdManager = Utils.currentChromeWindow.gUbiquity.cmdManager;
+      let commandsByServiceDomain = cmdManager.getCommandsByServiceDomain();
+      let commandsThatMatch = commandsByServiceDomain[pageDomain];
+      if(commandsThatMatch){
+        let verbId = commandsThatMatch[0].id;
+        let freqOfUse = cmdManager.__nlParser._suggestionMemory.getScore("", verbId);
+        if(freqOfUse == 0){
+          let visitsToDomain = Utils.history.visitsToDomain(pageDomain);
+          if((visitsToDomain % self.commandReminderPeriod) == 0)
+            self.showEnabledCommandNotification(event.target,
+                                                commandsThatMatch[0].names[0]);
+	}
+      }
+    }
+  }
+
+  function noNotificationSites(){
+    var sites = Utils.Application.prefs.getValue(
+                            "extensions.ubiquity.noNotificationSites", "");
+    return sites.split("|");
+  }
+
+  window.addEventListener("pageshow", onPageShow, false);
+
+  for (var name in this._plugins) {
     var plugin = this._plugins[name];
     if (plugin.installToWindow)
       plugin.installToWindow(window);
   }
 };
 
-// === {{{FeedManager.finalize()}}} ===
+FMgrProto.showEnabledCommandNotification = 
+  function showEnabledCommandNotification(targetDoc, commandName) {
+  var Cc = Components.classes;
+  var Ci = Components.interfaces;
+
+  // Find the <browser> which contains notifyWindow, by looking
+  // through all the open windows and all the <browsers> in each.
+  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
+           getService(Ci.nsIWindowMediator);
+  var enumerator = wm.getEnumerator(Utils.appWindowType);
+  var tabbrowser = null;
+  var foundBrowser = null;
+
+  while (!foundBrowser && enumerator.hasMoreElements()) {
+    var win = enumerator.getNext();
+    tabbrowser = win.getBrowser();
+    foundBrowser = tabbrowser.getBrowserForDocument(targetDoc);
+  }
+
+  // Return the notificationBox associated with the browser.
+  if (foundBrowser) {
+    var box = tabbrowser.getNotificationBox(foundBrowser);
+    var BOX_NAME = "ubiquity_notify_enabled_command";
+    var oldNotification = box.getNotificationWithValue(BOX_NAME);
+    if (oldNotification)
+      box.removeNotification(oldNotification);
+
+    // popup Ubiquity and input the verb associated with the website
+    function onShowMeClick(notification, button) {
+      notification.close();
+      Utils.setTimeout(showCommandInUbiquity, 500);
+    }
+    function showCommandInUbiquity(){
+      let gUbiquity = Utils.currentChromeWindow.gUbiquity;
+      gUbiquity.openWindow();
+      gUbiquity.__textBox.value = commandName;
+      addToNoNotifications(targetDoc.domain);
+    }
+
+    // add this domain to the list of domains to not give notifications for
+    function onNoMoreClick(notification, button) {
+      addToNoNotifications(targetDoc.domain);
+    }
+
+    function addToNoNotifications(site){
+      let notTheseSites = Utils.Application.prefs.getValue(
+                            "extensions.ubiquity.noNotificationSites", "");
+      notTheseSites = notTheseSites.concat(site + "|");
+      Utils.Application.prefs.setValue(
+                            "extensions.ubiquity.noNotificationSites",
+                                                   notTheseSites);
+    }
+    
+    var notify_message = ("Did you know that you have a Ubiquity" +
+                              " command for this website?");  
+    var buttons = [
+      {accessKey: "S",
+       callback: onShowMeClick,
+       label: "Show Me!",
+       popup: null},
+      {accessKey: "D",
+       callback: onNoMoreClick,
+       label: "Don't remind me again for this website",
+       popup:null}
+    ];
+    box.appendNotification(
+      notify_message,
+      BOX_NAME,
+      "chrome://ubiquity/skin/icons/favicon.ico",
+      box.PRIORITY_INFO_MEDIUM,
+      buttons
+    );
+  } else {
+    Cu.reportError("Couldn't find tab for document");
+  }
+};
+
+// TODO: Add Documentation for this
+FMgrProto.showNotification = function showNotification(plugin,
+                                                       targetDoc,
+                                                       commandsUrl,
+                                                       mimetype,
+                                                       notify_message) {
+
+  var Cc = Components.classes;
+  var Ci = Components.interfaces;
+
+  // Find the <browser> which contains notifyWindow, by looking
+  // through all the open windows and all the <browsers> in each.
+  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
+           getService(Ci.nsIWindowMediator);
+  var enumerator = wm.getEnumerator(Utils.appWindowType);
+  var tabbrowser = null;
+  var foundBrowser = null;
+
+  while (!foundBrowser && enumerator.hasMoreElements()) {
+    var win = enumerator.getNext();
+    tabbrowser = win.getBrowser();
+    foundBrowser = tabbrowser.getBrowserForDocument(targetDoc);
+  }
+
+  // Return the notificationBox associated with the browser.
+  if (foundBrowser) {
+    var box = tabbrowser.getNotificationBox(foundBrowser);
+    var BOX_NAME = "ubiquity_notify_commands_available";
+    var oldNotification = box.getNotificationWithValue(BOX_NAME);
+    if (oldNotification)
+      box.removeNotification(oldNotification);
+
+    function onSubscribeClick(notification, button) {
+      plugin.onSubscribeClick(targetDoc, commandsUrl, mimetype);
+    }
+    
+    if(!notify_message){
+      if(!plugin.notify_message){
+        var notify_message = ("This page contains Ubiquity commands.  " +
+         "If you'd like to subscribe to them, please " +
+         "click the button to the right.");
+      }else{
+        var notify_message = plugin.notify_message;
+      }
+    }
+    
+    var buttons = [
+      {accessKey: "S",
+       callback: onSubscribeClick,
+       label: "Subscribe...",
+       popup: null}
+    ];
+    box.appendNotification(
+      notify_message,
+      BOX_NAME,
+      "http://www.mozilla.com/favicon.ico",
+      box.PRIORITY_INFO_MEDIUM,
+      buttons
+    );
+  } else {
+    Cu.reportError("Couldn't find tab for document");
+  }
+};
+
+// === {{{FeedManager#finalize()}}} ===
 //
 // Performs any necessary cleanup on the feed manager. Should be
 // called when the feed manager no longer needs to be used.
 
 FMgrProto.finalize = function FMgr_finalize() {
-  for (url in this._feeds)
+  for (var url in this._feeds)
     this._feeds[url].finalize();
 };
 
@@ -365,7 +512,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
   let annSvc = this._annSvc;
   let hub = this._hub;
 
-  // === {{{Feed.title}}} ===
+  // === {{{Feed#title}}} ===
   //
   // The human-readable name for the feed. Read-only.
 
@@ -373,7 +520,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
   if (annSvc.pageHasAnnotation(uri, FEED_TITLE_ANNO))
     title = annSvc.getPageAnnotation(uri, FEED_TITLE_ANNO);
 
-  // === {{{Feed.type}}} ===
+  // === {{{Feed#type}}} ===
   //
   // A string identifying the type of the feed. This is usually the
   // same as the {{{rel}}} attribute contained in a HTML page's
@@ -382,7 +529,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
 
   let type = annSvc.getPageAnnotation(uri, FEED_TYPE_ANNO, DEFAULT_FEED_TYPE);
 
-  // === {{{Feed.uri}}} ===
+  // === {{{Feed#uri}}} ===
   //
   // A {{{nsIURI}}} corresponding to the feed's URL. This is the
   // human-readable page that the end-user clicked the "Subscribe..."
@@ -393,11 +540,11 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
                   uri: uri,
                   type: type};
 
-  // === {{{Feed.isBuiltIn}}} ===
+  // === {{{Feed#isBuiltIn}}} ===
   //
   // This is a boolean that indicates whether the feed is to be treated
   // as a built-in feed. See the documentation for
-  // {{{FeedManager.addSubscribedFeed()}}} for more
+  // {{{FeedManager#addSubscribedFeed()}}} for more
   // information. Read-only.
 
   feedInfo.__defineGetter__(
@@ -407,7 +554,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
     }
   );
 
-  // === {{{Feed.isSubscribed}}} ===
+  // === {{{Feed#isSubscribed}}} ===
   //
   // Whether the feed is currently being subscribed to or not. Read-only.
 
@@ -425,7 +572,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
   else
     expiration = annSvc.EXPIRE_NEVER;
 
-  // === {{{Feed.purge()}}} ===
+  // === {{{Feed#purge()}}} ===
   //
   // Permanently deletes the feed.
 
@@ -438,11 +585,11 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
     hub.notifyListeners("purge", uri);
   };
 
-  // === {{{Feed.remove()}}} ===
+  // === {{{Feed#remove()}}} ===
   //
   // If the feed is currently being subscribed to, unsubscribes
   // it. This isn't permanent; the feed can be resubscribed-to later
-  // with {{{Feed.unremove()}}}.
+  // with {{{Feed#unremove()}}}.
 
   feedInfo.remove = function feedInfo_remove() {
     if (annSvc.pageHasAnnotation(uri, FEED_SUBSCRIBED_ANNO)) {
@@ -453,7 +600,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
     }
   };
 
-  // === {{{Feed.unremove()}}} ===
+  // === {{{Feed#unremove()}}} ===
   //
   // If the feed is currently unsubscribed, re-subscribes it.
 
@@ -466,7 +613,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
     }
   };
 
-  // === {{{Feed.srcUri}}} ===
+  // === {{{Feed#srcUri}}} ===
   //
   // An {{{nsIURI}}} corresponding to the URL for the feed's source code.
   // Read-only.
@@ -474,11 +621,19 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
   var val = annSvc.getPageAnnotation(uri, FEED_SRC_URL_ANNO);
   feedInfo.srcUri = Utils.url(val, "data:text/plain,");
 
-  // === {{{Feed.canAutoUpdate}}} ===
+  // === {{{Feed#date}}} ===
+  //
+  // Subscribed {{{Date}}} of the feed. {{{new Date(0)}}} for builtin feeds.
+  // Read-only.
+
+  var val = annSvc.getPageAnnotation(uri, FEED_DATE_ANNO, 0);
+  feedInfo.date = new Date(val);
+
+  // === {{{Feed#canAutoUpdate}}} ===
   //
   // Whether or not the latest version of the feed's source code should
   // be fetched from the network. See
-  // {{{FeedManager.addSubscribedFeed()}}} for more
+  // {{{FeedManager#addSubscribedFeed()}}} for more
   // information. Read-only.
 
   if (annSvc.pageHasAnnotation(uri, FEED_AUTOUPDATE_ANNO))
@@ -489,7 +644,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
   else
     feedInfo.canAutoUpdate = false;
 
-  // === {{{Feed.getCode()}}} ===
+  // === {{{Feed#getCode()}}} ===
   //
   // Returns the cached source code for the feed, if any.
 
@@ -500,7 +655,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
       return "";
   };
 
-  // === {{{Feed.setCode()}}} ===
+  // === {{{Feed#setCode()}}} ===
   //
   // Sets the cached source code for the feed.
 
@@ -509,7 +664,30 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
                              expiration);
   };
 
-  // === {{{Feed.checkForManualUpdate()}}} ===
+  // === {{{Feed#getBin}}} ===
+  //
+  // Gets the persistent json storage for the feed.
+
+  // === {{{Feed#setBin}}} ===
+  //
+  // Sets the persistent json storage for the feed and
+  // returns the stored result as a new object.
+  //
+  // {bin} should be a json-encodable object.
+
+  var {json} = Utils;
+  feedInfo.getBin = function feedInfo_getBin() {
+    return (annSvc.pageHasAnnotation(uri, FEED_BIN_ANNO)
+            ? json.decode(annSvc.getPageAnnotation(uri, FEED_BIN_ANNO))
+            : {});
+  };
+  feedInfo.setBin = function feedInfo_setBin(bin) {
+    var data = json.encode(bin);
+    annSvc.setPageAnnotation(uri, FEED_BIN_ANNO, data, 0, expiration);
+    return json.decode(data);
+  };
+
+  // === {{{Feed#checkForManualUpdate()}}} ===
   //
   // Checks to see whether an update for the feed is available; if it
   // is, then the given callback is called and passed {{{true}}} as an
@@ -520,7 +698,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
     cb(false);
   };
 
-  // === {{{Feed.viewSourceUri}}} ===
+  // === {{{Feed#viewSourceUri}}} ===
   //
   // Returns the {{{nsIURI}}} for the feed's source code. If the source
   // code only exists as cached data, this may be a data URI.
@@ -538,7 +716,7 @@ FMgrProto.__makeFeed = function FMgr___makeFeed(uri) {
     }
   );
 
-  // === {{{Feed.finalize()}}} ===
+  // === {{{Feed#finalize()}}} ===
   //
   // Performs any needed cleanup on the feed before it's destroyed.
   feedInfo.finalize = function feedInfo_finalize() {

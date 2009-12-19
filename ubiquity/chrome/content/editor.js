@@ -1,6 +1,6 @@
-Components.utils.import("resource://ubiquity/modules/utils.js");
-Components.utils.import("resource://ubiquity/modules/prefcommands.js");
-Components.utils.import("resource://ubiquity/modules/setup.js");
+Cu.import("resource://ubiquity/modules/utils.js");
+Cu.import("resource://ubiquity/modules/prefcommands.js");
+Cu.import("resource://ubiquity/modules/setup.js");
 
 var Editor = {
   EDITOR_PREF : "extensions.ubiquity.editor",
@@ -21,26 +21,16 @@ var Editor = {
   },
   launchEditor : function(value){
     var editor = Application.prefs.getValue(this.EDITOR_PREF, null);
-    if(editor == null || editor == "") {
+    if (editor == null || editor == "") {
       displayMessage('please set your external editor');
     }
 
     // For the mac, wrap with a call to "open".
-    var xulRuntime = Components.classes["@mozilla.org/xre/app-info;1"]
-                          .getService(Components.interfaces.nsIXULRuntime);
-    var isOSX = ("Darwin"== xulRuntime.OS) && (editor.substring(editor.length-4)==".app");
-
-    Application.console.log("Editor        : " + editor);
-    Application.console.log("xulRuntime.OS : " + xulRuntime.OS);
-    Application.console.log("isOSX         : " + isOSX);
-    var executable = Components.classes["@mozilla.org/file/local;1"]
-                .createInstance(Components.interfaces.nsILocalFile);
+    var isOSX = Utils.OS === "Darwin" && editor.slice(-4) === ".app";
+    var executable = (Components.classes["@mozilla.org/file/local;1"]
+                      .createInstance(Components.interfaces.nsILocalFile));
     executable.followLinks = true;
-    if(isOSX) {
-            executable.initWithPath("/usr/bin/open");
-    } else {
-      executable.initWithPath(editor);
-    }
+    executable.initWithPath(isOSX ? "/usr/bin/open" : editor);
     if (executable.exists()) {
       var file = Components.classes["@mozilla.org/file/directory_service;1"]
                            .getService(Components.interfaces.nsIProperties)
@@ -97,7 +87,7 @@ var Editor = {
       fstream.init(file, -1, 0, 0);
       sstream.init(fstream);
 
-      value = "";
+      var value = "";
       var str = sstream.read(4096);
       while (str.length > 0) {
         value += str;
@@ -118,8 +108,8 @@ function paste() {
     if (feedType == "commands") {
       var file = encodeURIComponent("[gistfile1]");
       var quickPaste = ("file_ext" + file + "=.js&file_name" +
-                        file + "=x&file_contents" + file +
-                        "=" + encodeURIComponent(code) + "&x=27&y=27");
+                        file + "=x.js&file_contents" + file +
+                        "=" + encodeURIComponent(code));
       var updateUrl = "http://gist.github.com/gists";
       Utils.openUrlInBrowser(updateUrl, quickPaste);
     } else if (feedType == "locked-down-commands") {
@@ -128,16 +118,17 @@ function paste() {
       Utils.openUrlInBrowser(url);
     }
   } catch(e) {
-    Components.utils.reportError(e);
+    Cu.reportError(e);
     displayMessage("Error: " + e);
   }
 }
 
 function importTemplate() {
-  editor = document.getElementById("editor");
-  var template = Utils.getLocalUrl("command-template.js");
-  editor.editor.setCode(editor.editor.getCode()+template);
-  PrefCommands.setCode(editor.editor.getCode());
+  var {editor} = document.getElementById("editor");
+  var code = (Utils.getLocalUrl("command-template.js") +
+              editor.getCode());
+  editor.setCode(code);
+  PrefCommands.setCode(code);
 }
 
 function saveAs() {
@@ -177,7 +168,7 @@ function saveAs() {
       $("#editor-div").slideUp();
     }
   } catch(e) {
-    Components.utils.reportError(e);
+    Cu.reportError(e);
     displayMessage("Error: " + e);
   }
 }
@@ -202,3 +193,9 @@ function saveTextToFile(text, file) {
 function displayMessage(msg){
   $("#notification-bar").text(msg).show("fast");
 }
+
+$(function ready() {
+  $("#editor").bind("keyup, change", function updateCode(){
+    PrefCommands.setCode(this.value);
+  });
+});

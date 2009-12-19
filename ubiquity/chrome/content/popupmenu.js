@@ -21,6 +21,7 @@
  *   Atul Varma <atul@mozilla.com>
  *   Abimanyu Raja <abimanyuraja@gmail.com>
  *   Blair McBride <unfocused@gmail.com>
+ *   Satoshi Murakami <murky.satyr@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -36,52 +37,67 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-function UbiquityPopupMenu(contextMenu, popupElement, ubiquityMenu, ubiquitySeparator, cmdSuggester) {
+function UbiquityPopupMenu(contextMenu, ubiquityMenu, ubiquitySeparator,
+                           cmdSuggester) {
+  var {menupopup} = ubiquityMenu;
+  var maxSuggs = 10;
+
   function contextPopupShowing(event) {
-    
-    if (event.target.id != popupElement.id)
-      return;
-      
-    /* Remove previously added submenus */
-    for(let i=popupElement.childNodes.length - 1; i >= 0; i--) {
-      // TODO: openURL() isn't defined... Is this code ever called?
-      popupElement.removeEventListener("command", openURL, true);
-      // popupElement.removeEventListener("click", executeClick, true);
-      popupElement.removeChild(popupElement.childNodes.item(i));
-    }
-    
-    var context = {
-      screenX: 0,
-      screenY: 0,
-      lastCmdResult: null
+    if (event.target !== this || !selected()) return;
+
+    var context = menupopup.context = {
+      screenX: event.screenX,
+      screenY: event.screenY,
+      chromeWindow: window,
+      focusedWindow: document.commandDispatcher.focusedWindow,
+      focusedElement: document.commandDispatcher.focusedElement,
     };
 
-    if (gContextMenu.isContentSelection() || gContextMenu.onTextInput) {
-      context.focusedWindow = document.commandDispatcher.focusedWindow;
-      context.focusedElement = document.commandDispatcher.focusedElement;
-    }
-
-    if (context.focusedWindow) {
-      
-      var results = cmdSuggester(context);
-      for (i in results) {
-        var tempMenu = document.createElement("menuitem");
-		tempMenu.setAttribute("label", i);
-		if(results[i].icon) {
-			tempMenu.setAttribute("class", "menuitem-iconic");
-			tempMenu.setAttribute("image", results[i].icon);
-		}
-        tempMenu.addEventListener("command", results[i], true);
-        event.target.appendChild(tempMenu);
+    removeChildren();
+    cmdSuggester(context, function onSuggest(suggestions) {
+      removeChildren();
+      var suggsToDisplay = suggestions.filter(objectOnly).slice(0, maxSuggs);
+      for each (var sugg in suggsToDisplay) {
+        let {_verb} = sugg, {icon} = _verb.cmd || _verb;
+        let menuItem = document.createElement("menuitem");
+        menuItem.setAttribute("label", sugg.displayText);
+        if (icon) {
+          menuItem.setAttribute("class", "menuitem-iconic");
+          menuItem.setAttribute("image", icon);
+        }
+        menuItem.suggestion = sugg;
+        menupopup.appendChild(menuItem);
       }
+    });
+  }
+  function toggleUbiquityMenu(event) {
+    ubiquityMenu.hidden = ubiquitySeparator.hidden = !selected();
+  }
+  function openUbiquity(event) {
+    if (event.target !== this) return;
+    gContextMenu.menu.hidePopup();
+    gUbiquity.openWindow();
+  }
+  function executeMenuCommand(event) {
+    event.target.suggestion.execute(this.context);
+  }
+  function removeChildren(){
+    for (let c; c = menupopup.lastChild;) menupopup.removeChild(c);
+  }
+  function objectOnly(sugg) {
+    if (sugg.args) {
+      let arg = sugg.args.object;
+      return !!(arg && (arg[0] || 0).text);
     }
+    if (sugg._argSuggs)
+      return !!(sugg._argSuggs.direct_object || 0).text;
+    return false;
   }
-  function toggleUbiquityMenu(event){
-    var isHidden = ! (gContextMenu.isContentSelection() || gContextMenu.onTextInput);
-    ubiquityMenu.hidden = isHidden;
-    ubiquitySeparator.hidden = isHidden;
-  }
-  
+  function selected() (gContextMenu.isContentSelection() ||
+                       gContextMenu.onTextInput);
+
+  menupopup.addEventListener("popupshowing", contextPopupShowing, false);
+  menupopup.addEventListener("command", executeMenuCommand, false);
   contextMenu.addEventListener("popupshowing", toggleUbiquityMenu, false);
-  popupElement.addEventListener("popupshowing", contextPopupShowing, false);
+  ubiquityMenu.addEventListener("click", openUbiquity, false);
 }

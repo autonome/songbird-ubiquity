@@ -24,6 +24,7 @@
  *   Maria Emerson <memerson@mozilla.com>
  *   Abimanyu Raja <abimanyuraja@gmail.com>
  *   Blair McBride <unfocused@gmail.com>
+ *   Satoshi Murakami <murky.satyr@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -50,227 +51,217 @@ function Ubiquity(msgPanel, textBox, cmdManager) {
   this.__textBox = textBox;
   this.__cmdManager = cmdManager;
   this.__needsToExecute = false;
-  this.__showCount = 0;
-  this.__lastValue = null;
+  this.__lastValue = "";
   this.__previewTimerID = -1;
+  this.__lastKeyEvent = {};
+
+  const Cu = Components.utils;
+  Cu.import("resource://ubiquity/modules/utils.js", this);
+  Cu.import("resource://ubiquity/modules/contextutils.js", this);
 
   var self = this;
 
-  msgPanel.addEventListener( "popupshown",
-                             function() { self.__onShown(); },
-                             false );
-  msgPanel.addEventListener( "popuphidden",
-                             function() { self.__onHidden(); },
-                             false );
-  window.addEventListener("mousemove",
-                          function(event) { self.__onMouseMove(event); },
-                          false);
-  textBox.addEventListener("keydown",
-                           function(event) { self.__onKeydown(event); },
-                           true);
-  textBox.addEventListener("keyup",
-                           function(event) { self.__onInput(event); },
-                           true);
-  textBox.addEventListener("keypress",
-                           function(event) { self.__onKeyPress(event); },
-                           true);
+  window.addEventListener("mousemove", this, false);
 
-  var xulr = Components.classes["@mozilla.org/xre/app-info;1"]
-                   .getService(Components.interfaces.nsIXULRuntime);
+  textBox.addEventListener("keydown", this, true);
+  textBox.addEventListener("keyup", this, true);
+  textBox.addEventListener("keypress", this, true);
+  if (this.Utils.OS === "WINNT")
+    textBox.addEventListener("blur", this, false);
 
-  if(xulr.OS === "WINNT"){
-     textBox.addEventListener("blur",
-                           function(event) { self.__onBlur(event); },
-                           false);
-   }
+  msgPanel.addEventListener("popupshown", this, false);
+  msgPanel.addEventListener("popuphidden", this, false);
+  msgPanel.addEventListener("click", function U_onPanelClick(event) {
+    // middle: open link, right: close panel, left: both
+    var {button, target} = event;
+    if (button !== 2) {
+      do var {href} = target;
+      while (!href && (target = target.parentNode));
+      if (!href || /^(?:javascript:|#)/.test(href)) return;
+      if (/^\w+:/.test(href)) self.Utils.openUrlInBrowser(href);
+    }
+    if (button !== 1) self.closeWindow();
+    event.preventDefault();
+  }, true);
 }
 
 Ubiquity.prototype = {
-  __PROCESS_INPUT_DELAY: 50,
-  __KEYCODE_ENTER: 13,
-  __KEYCODE_UP: 38,
-  __KEYCODE_DOWN: 40,
-  __KEYCODE_TAB:  9,
+  __DEFAULT_INPUT_DELAY: 50,
   __MIN_CMD_PREVIEW_LENGTH: 0,
-  __KEYCODE_1: 49,
 
-  get textBox() {
-    return this.__textBox;
+  __KEYCODE_ENTER: KeyEvent.DOM_VK_RETURN,
+  __KEYCODE_TAB  : KeyEvent.DOM_VK_TAB,
+
+  __KEYMAP_MOVE_INDICATION: {
+    38: "moveIndicationUp",
+    40: "moveIndicationDown",
+  },
+  __KEYMAP_SCROLL_RATE: {
+    33: -.8, // page up
+    34: +.8, // page dn
   },
 
-  __onBlur: function __onBlur() {
+  handleEvent: function U_handleEvent(event) {
+    this["__on" + event.type](event);
+  },
+
+  get textBox() this.__textBox,
+  get msgPanel() this.__msgPanel,
+  get cmdManager() this.__cmdManager,
+  get lastKeyEvent() this.__lastKeyEvent,
+  get isWindowOpen() this.__msgPanel.state === "open",
+  get inputDelay() Application.prefs.getValue("extensions.ubiquity.inputDelay",
+                                              this.__DEFAULT_INPUT_DELAY),
+
+  __onblur: function U__onBlur() {
     // Hackish fix for #330.
-    var self = this;
+    this.Utils.setTimeout(function refocusTextbox(self) {
+      if (self.isWindowOpen) self.__textBox.focus();
+    }, 100, this);
+  },
 
-    function refocusTextbox() {
-      if (self.__showCount) {
-        var isTextBoxFocused = (document.commandDispatcher.focusedElement ==
-                                self.__textBox);
-        if (!isTextBoxFocused)
-          self.__textBox.focus();
-      }
-    }
-
-    Utils.setTimeout(refocusTextbox, 100);
-   },
-
-  __onMouseMove: function __onMouseMove(event) {
+  __onmousemove: function U__onMouseMove(event) {
     this.__x = event.screenX;
     this.__y = event.screenY;
   },
 
-  __onKeydown: function __onKeyDown(event) {
-    if (event.keyCode == this.__KEYCODE_UP) {
+  __onkeydown: function U__onKeyDown(event) {
+    var {keyCode} = this.__lastKeyEvent = event;
+
+    var move = this.__KEYMAP_MOVE_INDICATION[keyCode];
+    if (move) {
+      this.__cmdManager[move](this.__makeContext());
       event.preventDefault();
-      this.__cmdManager.moveIndicationUp(this.__makeContext());
-    } else if (event.keyCode == this.__KEYCODE_DOWN) {
-      event.preventDefault();
-      this.__cmdManager.moveIndicationDown(this.__makeContext());
-    } else if (event.keyCode == this.__KEYCODE_TAB) {
-      event.preventDefault();
-      var suggestionText = this.__cmdManager.getHilitedSuggestionText(
-        this.__makeContext()
-      );
-      if(suggestionText)
+    }
+    else if (keyCode === this.__KEYCODE_TAB) {
+      var suggestionText =
+        this.__cmdManager.getHilitedSuggestionText(this.__makeContext());
+      if (suggestionText)
         this.__textBox.value = suggestionText;
+      event.preventDefault();
     }
   },
 
-  __onInput: function __onInput(event) {
-    if (this.__showCount == 0)
+  __onkeyup: function U__onKeyup(event) {
+    var {keyCode} = this.__lastKeyEvent = event;
+
+    if (event.ctrlKey && event.altKey &&
+        KeyEvent.DOM_VK_0 <= keyCode && keyCode <= KeyEvent.DOM_VK_Z) {
+      this.__cmdManager.previewBrowser.activateAccessKey(keyCode);
+      event.preventDefault();
+      event.stopPropagation();
       return;
+    }
 
-    var keyCode = event.keyCode;
-
-    if (keyCode == this.__KEYCODE_UP ||
-               keyCode == this.__KEYCODE_DOWN ||
-               keyCode == this.__KEYCODE_TAB) {
-    } else if (keyCode >= this.__KEYCODE_1 &&
-               keyCode < this.__KEYCODE_1 + 10 &&
-               event.altKey && event.ctrlKey) {
-      this.__cmdManager.activateAccessKey(keyCode - this.__KEYCODE_1 + 1);
-    } else
+    if (keyCode >= KeyEvent.DOM_VK_DELETE ||
+        keyCode === KeyEvent.DOM_VK_SPACE ||
+        keyCode === KeyEvent.DOM_VK_BACK_SPACE ||
+        keyCode === KeyEvent.DOM_VK_RETURN && !this.__needsToExecute)
+      // Keys that would change input. RETURN is for IME.
+      // https://developer.mozilla.org/En/DOM/Event/UIEvent/KeyEvent
       this.__processInput();
   },
 
-   __onKeyPress: function(event) {
-     var keyCode = event.keyCode;
+  __onkeypress: function U__onKeyPress(event) {
+    var {keyCode} = event;
+    if (keyCode === this.__KEYCODE_ENTER) {
+      this.__processInput(true);
+      this.__needsToExecute = this.__cmdManager.hasSuggestions();
+      this.__msgPanel.hidePopup();
+      return;
+    }
+    var rate = this.__KEYMAP_SCROLL_RATE[keyCode];
+    if (rate) {
+      let [x, y] = event.shiftKey ? [rate, 0] : [0, rate];
+      this.__cmdManager.previewBrowser.scroll(x, y);
+      return;
+    }
+  },
 
-     if (keyCode == this.__KEYCODE_ENTER) {
-       this.__forceProcessInput();
-       if (this.__cmdManager.hasSuggestions()) {
-         this.__needsToExecute = true;
-       }
-       this.__msgPanel.hidePopup();
-     }
-   },
-
-  __onSuggestionsUpdated: function __onSuggestionsUpdated() {
+  __onSuggestionsUpdated: function U__onSuggestionsUpdated() {
     var input = this.__textBox.value;
     this.__cmdManager.onSuggestionsUpdated(input, this.__makeContext());
   },
 
-  __delayedProcessInput: function __delayedProcessInput() {
-    this.__previewTimerID = -1;
-    var self = this;
-
+  __delayedProcessInput: function U__delayedProcessInput() {
     var input = this.__textBox.value;
-    if (input != this.__lastValue) {
+    if (input.length < this.__MIN_CMD_PREVIEW_LENGTH) return;
 
-      this.__lastValue = input;
-
-      if (input.length >= this.__MIN_CMD_PREVIEW_LENGTH)
-        this.__cmdManager.updateInput(
-          input,
-          this.__makeContext(),
-          function() {self.__onSuggestionsUpdated();}
-        );
-    }
-  },
-
-  __forceProcessInput: function __forceProcessInput() {
-    if (this.__previewTimerID != -1) {
-      Utils.clearTimeout(this.__previewTimerID);
-      this.__delayedProcessInput();
-    }
-  },
-
-  __processInput: function __processInput() {
-    if (this.__previewTimerID != -1)
-      Utils.clearTimeout(this.__previewTimerID);
-
-    var self = this;
-    this.__previewTimerID = Utils.setTimeout(
-      function() { self.__delayedProcessInput(); },
-      this.__PROCESS_INPUT_DELAY
-    );
-  },
-
-  __makeContext: function __makeContext() {
-    var context = {focusedWindow : this.__focusedWindow,
-                   focusedElement : this.__focusedElement,
-                   chromeWindow : window,
-                   screenX : this.__x,
-                   screenY : this.__y};
-    return context;
-  },
-
-  __onHidden: function __onHidden() {
-    this.__showCount -= 1;
-
-    if (this.__showCount > 0)
-      return;
-
-    this.__msgPanel.hidden = true;
     var context = this.__makeContext();
-
-    if (this.__focusedElement)
-      this.__focusedElement.focus();
-    else
-      if (this.__focusedWindow)
-        this.__focusedWindow.focus();
-
-    this.__focusedWindow = null;
-    this.__focusedElement = null;
-
-    if (this.__needsToExecute) {
-      this.__cmdManager.execute(context);
-      this.__needsToExecute = false;
+    if (input !== this.__lastValue ||
+        !input && this.ContextUtils.getSelection(context)) {
+      var self = this;
+      this.__cmdManager.updateInput(
+        this.__lastValue = input,
+        context,
+        function U___onSU() { self.__onSuggestionsUpdated(); });
     }
+  },
+
+  __processInput: function U__processInput(forcing) {
+    this.Utils.clearTimeout(this.__previewTimerID);
+    if (forcing)
+      this.__delayedProcessInput();
+    else
+      this.__previewTimerID = this.Utils.setTimeout(
+        function U___delayedPI(self) { self.__delayedProcessInput(); },
+        this.inputDelay,
+        this);
+  },
+
+  __makeContext: function U__makeContext() {
+    return {
+      screenX: this.__x,
+      screenY: this.__y,
+      chromeWindow: window,
+      focusedWindow : this.__focusedWindow,
+      focusedElement: this.__focusedElement,
+    };
+  },
+
+  __onpopuphidden: function U__onHidden() {
+    if (this.__needsToExecute) {
+      this.__needsToExecute = false;
+      this.__cmdManager.execute(this.__makeContext());
+    }
+    var unfocused = this.__focusedElement || this.__focusedWindow;
+    if (unfocused) unfocused.focus(); // focus() === unblair()
+
+    this.__focusedWindow = this.__focusedElement = null;
     this.__cmdManager.reset();
   },
 
-  __onShown: function __onShown() {
-    if (this.__showCount == 0) {
-      this.__lastValue = null;
-      this.__textBox.focus();
-      this.__textBox.select();
-      this.__cmdManager.refresh();
-      this.__processInput();
-    }
-    this.__showCount += 1;
+  __onpopupshown: function U__onShown() {
+    this.__lastValue = "";
+    this.__textBox.focus();
+    this.__textBox.select();
+    this.__cmdManager.refresh();
+    this.__processInput();
   },
 
-  setLocalizedDefaults: function setLocalizedDefaults( langCode ) {
-    if (langCode == "jp") {
-      this.__DEFAULT_PREVIEW = jpGetDefaultPreview();
-      this.__KEYCODE_ENTER = 39;
-    }
+  setLocalizedDefaults: function U_setLocalizedDefaults(langCode) {
   },
 
-  openWindow: function openWindow(anchor) {
-    this.__focusedWindow = document.commandDispatcher.focusedWindow;
-    this.__focusedElement = document.commandDispatcher.focusedElement;
-
-    this.__msgPanel.hidden = false;
+  openWindow: function U_openWindow() {
+    ({focusedWindow : this.__focusedWindow,
+      focusedElement: this.__focusedElement}) = document.commandDispatcher;
+    // This is a temporary workaround for #43.
+    var anchor = document.getElementById("content").selectedBrowser;
     this.__msgPanel.openPopup(anchor, "overlap", 0, 0, false, true);
   },
 
-  closeWindow: function closeWindow(){
+  closeWindow: function U_closeWindow() {
     this.__msgPanel.hidePopup();
   },
 
-  get isWindowOpen() {
-    return this.__msgPanel.hidden;
-  }
+  toggleWindow: function U_toggleWindow() {
+    switch (this.__msgPanel.state) {
+      case "open":
+      case "hiding":
+      case "showing":
+      this.closeWindow();
+      return;
+    }
+    this.openWindow();
+  },
 };

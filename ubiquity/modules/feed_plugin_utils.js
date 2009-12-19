@@ -21,6 +21,7 @@
  *   Atul Varma <atul@mozilla.com>
  *   Jono DiCarlo <jdicarlo@mozilla.com>
  *   Blair McBride <unfocused@gmail.com>
+ *   Michael Yoshitaka Erlewine <mitcho@mitcho.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -36,43 +37,43 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-let EXPORTED_SYMBOLS = ["finishCommand"];
+var EXPORTED_SYMBOLS = ["finishCommand"];
 
-function finishCommand(srcCommand) {
-  var cmd = new Object();
+// Default delay to wait before calling a preview function, in ms.
+const DEFAULT_PREVIEW_DELAY = 150;
 
-  // Default delay to wait before calling a preview function, in ms.
-  var DEFAULT_PREVIEW_DELAY = 150;
+function finishCommand(cmd) {
+  Components.utils.import("resource://ubiquity/modules/setup.js");
 
-  var propsToInherit = [
-    "DOLabel",
-    "DOType",
-    "DODefault",
-    "author",
-    "homepage",
-    "contributors",
-    "license",
-    "description",
-    "help",
-    "synonyms"
-  ];
+  if (UbiquitySetup.parserVersion === 2) {
+    // Convert for Parser 2 if it takes no arguments.
+    if (cmd.oldAPI && !cmd.DOType && !cmd.modifiers && isEmpty(cmd.arguments)) {
+      dump("converting 1 > 2: " + cmd.name + "\n");
+      let clone = {__proto__: cmd, arguments: []};
+      if (!cmd.names) clone.names = [cmd.name];
+      cmd = clone;
+    }
+    if (!cmd.oldAPI && !cmd.arguments)
+      cmd.arguments = [];
+    if (cmd.arguments) {
+      Components.utils.import(
+        "resource://ubiquity/modules/localization_utils.js");
+      cmd = localizeCommand(cmd);
+    }
+  } else {
+    cmd.name = hyphenize(cmd.name);
+    for each (let key in ["names", "synonyms"]) {
+      let names = cmd[key];
+      for (let i in names) names[i] = hyphenize(names[i]);
+    }
+  }
 
-  propsToInherit.forEach(
-    function CS_copyProp(prop) {
-      if (!srcCommand[prop])
-        cmd[prop] = null;
-    });
-
-  if (!srcCommand.previewDelay && srcCommand.previewDelay != 0)
+  if (cmd.previewDelay == null)
     cmd.previewDelay = DEFAULT_PREVIEW_DELAY;
-
-  if (!srcCommand.modifiers)
-    cmd.modifiers = {};
-
-  if (!srcCommand.modifierDefaults)
-    cmd.modifierDefaults = {};
-
-  cmd.__proto__ = srcCommand;
 
   return cmd;
 }
+
+function isEmpty(obj) !obj || !obj.__count__;
+
+function hyphenize(name) name.replace(/ /g, "-");

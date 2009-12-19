@@ -2,215 +2,121 @@
 // TEXT COMMANDS
 // -----------------------------------------------------------------
 
-function cmd_bold() {
-  var doc = context.focusedWindow.document;
-
-  if (doc.designMode == "on")
-    doc.execCommand("bold", false, null);
-  else
-    displayMessage("You're not in a rich text editing field.");
-}
-cmd_bold.description = "If you're in a rich-text-edit area, makes the selected text bold.";
-cmd_bold.icon = "chrome://ubiquity/skin/icons/text_bold.png";
-
-function cmd_italic() {
-  var doc = context.focusedWindow.document;
-
-  if (doc.designMode == "on")
-    doc.execCommand("italic", false, null);
-  else
-    displayMessage("You're not in a rich text editing field.");
-}
-cmd_italic.description = "If you're in a rich-text-edit area, makes the selected text italic.";
-cmd_italic.icon = "chrome://ubiquity/skin/icons/text_italic.png";
-
-function cmd_underline() {
-  var doc = context.focusedWindow.document;
-
-  if (doc.designMode == "on")
-    doc.execCommand("underline", false, null);
-  else
-    displayMessage("You're not in a rich text editing field.");
-}
-cmd_underline.description = "If you're in a rich-text-edit area, underlines the selected text.";
-cmd_underline.icon = "chrome://ubiquity/skin/icons/text_underline.png";
-
-function cmd_undo() {
-  var doc = context.focusedWindow.document;
-
-  if (doc.designMode == "on")
-    doc.execCommand("undo", false, null);
-  else
-    displayMessage("You're not in a rich text editing field.");
-}
-cmd_undo.description = "Undoes your latest style/formatting or page-editing changes.";
-cmd_undo.icon = "chrome://ubiquity/skin/icons/arrow_undo.png";
-
-function cmd_redo() {
-  var doc = context.focusedWindow.document;
-
-  if (doc.designMode == "on")
-    doc.execCommand("redo", false, null);
-  else
-    displayMessage("You're not in a rich text editing field.");
-}
-cmd_redo.description = "Redoes your latest style/formatting or page-editing changes.";
-cmd_redo.icon = "chrome://ubiquity/skin/icons/arrow_redo.png";
-
-
-function wordCount(text){
-  var words = text.split(" ");
-  var wordCount = 0;
-
-  for(i=0; i<words.length; i++){
-    if (words[i].length > 0)
-      wordCount++;
-  }
-
-  return wordCount;
-}
+/* Note that these text formatting commands are a little weird in that
+ * they operate on a selection, but they don't take the selection as
+ * an argument.  This is as intended, because if there is no text
+ * selection, there is nothing for any of these commands to do.
+ */
+(function textFormattingCommand(format, desc, icon, name) {
+  CmdUtils.CreateCommand({
+    names: [name || format],
+    description:
+    "If you're in a rich-text-edit area, " + desc + ".",
+    icon: "chrome://ubiquity/skin/icons/" + icon + ".png",
+    execute: function () {
+      var doc = context.focusedWindow.document;
+      if (doc.designMode === "on")
+        doc.execCommand(format, false, null);
+      else
+        displayMessage(_("You're not in a rich text editing field."), this);
+    }
+  });
+  return arguments.callee;
+})
+("bold", "makes the selected text bold", "text_bold")
+("italic", "makes the selected text italic", "text_italic", "italicize")
+("underline", "underlines the selected text", "text_underline")
+("undo", "undoes your latest style/formatting or page-editing changes",
+ "arrow_undo", "undo text edit")
+("redo", "redoes your latest style/formatting or page-editing changes",
+ "arrow_redo", "redo text edit")
+;
 
 CmdUtils.CreateCommand({
-  name: "word-count",
-  takes: {text: noun_arb_text},
-  icon: "chrome://ubiquity/skin/icons/sum.png",
-  description: "Displays the number of words in a selection.",
-  execute: function( directObj ) {
-    if (directObj.text)
-      displayMessage(wordCount(directObj.text) + " words");
-    else
-      displayMessage("No words selected.");
-  },
-  preview: function(pBlock, directObj) {
-    if (directObj.text)
-      pBlock.innerHTML = wordCount(directObj.text) + " words";
-    else
-      pBlock.innerHTML = "Displays the number of words in a selection.";
-  }
-});
-
-
-function cmd_highlight() {
-  var sel = context.focusedWindow.getSelection();
-  var document = context.focusedWindow.document;
-
-  if (sel.rangeCount >= 1) {
-    var range = sel.getRangeAt(0);
-    var newNode = document.createElement("span");
-    newNode.style.background = "yellow";
-    range.surroundContents(newNode);
-  }
-}
-cmd_highlight.description = 'Highlights your current selection, like <span style="background: yellow; color: black;">this</span>.';
-cmd_highlight.icon = "chrome://ubiquity/skin/icons/textfield_rename.png";
-cmd_highlight.preview = function(pblock) {
-  pblock.innerHTML = cmd_highlight.description;
-};
-
-CmdUtils.CreateCommand({
-  name : "link-to-wikipedia",
-  takes : {"text" : noun_arb_text},
-  icon: "http://www.wikipedia.org/favicon.ico",
-  description: "Turns a selected phrase into a link to the matching Wikipedia article.",
-  help: "Can only be used in a rich text-editing field.",
-  execute : function( directObj ){
-    var text = directObj.text;
-    var wikiText = text.replace(/ /g, "_");
-    var html = ("<a href=\"http://en.wikipedia.org/wiki/" +
-                "Special:Search/" + wikiText +
-                "\">" + text + "</a>");
-
-    var doc = context.focusedWindow.document;
-    if (doc.designMode == "on")
-      doc.execCommand("insertHTML", false, html);
-    else
-      displayMessage("You're not in a rich text editing field.");
-  },
-
-  preview : function(pblock, directObj){
-    var text = directObj.text;
-    if (text.length < 1){
-      pblock.innerHTML = "Inserts a link to Wikipedia article on text";
-    }else{
-      var wikiText = text.replace(/ /g, "_");
-      var html = ("<a style=\"color: yellow;text-decoration: underline;\"" +
-                  "href=\"http://en.wikipedia.org/wiki/" +
-                  "Special:Search/" + wikiText +
-                  "\">" + text + "</a>");
-      pblock.innerHTML = "Inserts a link to Wikipedia article on " + text + " like this: " + html;
+  names: ["highlight", "hilite"],
+  description: (
+    'Highlights your current selection, ' +
+    'like <span style="background: yellow; color: black;">this</span>.'),
+  icon: "chrome://ubiquity/skin/icons/textfield_rename.png",
+  execute: function () {
+    var win = context.focusedWindow;
+    var doc = win.document;
+    var sel = win.getSelection();
+    for (var i = sel.rangeCount; i--;) {
+      var range = sel.getRangeAt(i);
+      var newNode = doc.createElement("span");
+      var {style} = newNode;
+      style.background = "yellow";
+      style.color = "black";
+      range.surroundContents(newNode);
     }
   }
 });
 
+/* TODO should the object text instead be an "in" argument, as in
+ * "count words in this" ?
+ */
+function wordCount(t) (t.match(/\S+/g) || "").length;
+
+CmdUtils.CreateCommand({
+  names: ["count words", "word count"],
+  arguments: {object: noun_arb_text},
+  icon: "chrome://ubiquity/skin/icons/sum.png",
+  description: "Displays the number of words in a selection.",
+  execute: function ({object: {text}}) {
+    displayMessage((text
+                    ? _("${num} words", {num: wordCount(text)})
+                    : _("No words selected.")),
+                   this);
+  },
+  preview: function (pb, {object: {text}}) {
+    pb.innerHTML = (text
+                    ? _("<b>${num}</b> words", {num: wordCount(text)})
+                    : this.description);
+  }
+});
+
+Components.utils.import("resource://ubiquity/modules/setup.js");
+const defaultLang = UbiquitySetup.languageCode;
+
+/* TODO the dummy argument "wikipedia" could become a plugin argument
+ * and this command could become a general purpose "insert link"
+ * command.
+ */
+CmdUtils.CreateCommand({
+  names: ["link to wikipedia"],
+  arguments: {
+    object: noun_arb_text,
+    format: noun_type_lang_wikipedia,
+  },
+  description:
+  "Turns a phrase into a link to the matching Wikipedia article.",
+  icon: "chrome://ubiquity/skin/icons/wikipedia.ico",
+  _link: function({object: {text, html}, format: {data}}){
+    var url = ("http://" + (data || defaultLang) +
+               ".wikipedia.org/wiki/Special%3ASearch/" +
+               encodeURIComponent(text.replace(/ /g, "_")));
+    return ['<a href="' + Utils.escapeHtml(url) + '">' + html + "</a>", url];
+  },
+  execute: function (args) {
+    var [htm, url] = this._link(args);
+    CmdUtils.setSelection(htm, {text: url});
+  },
+  preview: function (pbl, args) {
+    var [htm, url] = this._link(args);
+    pbl.innerHTML = (this.description +
+                     "<p>" + htm + "</p>" +
+                     <code>{url}</code>.toXMLString());
+  }
+});
 
 // -----------------------------------------------------------------
 // CALCULATE COMMANDS
 // -----------------------------------------------------------------
 
-CmdUtils.CreateCommand({
-  name: "calculate",
-  takes: {"expression": noun_arb_text},
-  icon: "chrome://ubiquity/skin/icons/calculator.png",
-  description: "Calculates the value of a mathematical expression.",
-  help: "Try it out: issue &quot;calc 22/7 - 1&quot;.",
-  preview: function(previewBlock, directObject) {
-    var expression = directObject.text;
-
-    if(expression.length < 1) {
-      previewBlock.innerHTML = "Calculates an expression. E.g., 22/7.";
-      return;
-    }
-
-    var previewTemplate = "${expression} = <b>${result}</b>" +
-      "{if error}<p><b>Error:</b> ${error}</p>{/if}";
-
-    var result = "?";
-    var error = null;
-    try {
-      var parser = new MathParser();
-
-      result = parser.parse(expression);
-
-      if(isNaN(result))
-        throw new Error("Invalid expression");
-    } catch(e) {
-      error = e.message;
-      result = "?";
-    }
-    var previewData = {
-      "expression": expression,
-      "result": result,
-      "error": error
-    };
-    previewBlock.innerHTML = CmdUtils.renderTemplate(previewTemplate, previewData);
-  },
-
-  execute: function( directObject ) {
-    var expression = directObject.text;
-
-    if(expression.length < 1) {
-      displayMessage("Requires a expression.");
-      return;
-    }
-
-    try {
-      var parser = new MathParser();
-      var result = parser.parse(expression) + "";
-
-      if(isNaN(result))
-        throw new Error("Invalid expression");
-
-      CmdUtils.setSelection(result);
-      CmdUtils.setLastResult(result);
-    } catch(e) {
-      displayMessage("Error calculating expression: " + expression);
-    }
-  }
-});
-
 //+ Carlos R. L. Rodrigues
 //@ http://jsfromhell.com/classes/math-parser [rev. #2]
-MathParser = function(){
+function MathParser(){
   var o = this, p = o.operator = {};
   p["+"] = function(n, m){return n + m;};
   p["-"] = function(n, m){return n - m;};
@@ -253,149 +159,74 @@ MathParser.prototype.parse = function(e){
   return o.eval(e);
 };
 
-CmdUtils.CreateCommand({
-    name: "gcalculate",
-    takes: {"expression": noun_arb_text},
-
-    description: "Calculate knows many functions, constants, units, currencies, etc.",
-    help: "Try 5% of 700,  sin( sqrt( ln(pi))),  (1+i)^3,  15 mod 9, (5 choose 2) / 3!,  speed of light in miles per hour,  3 dollars in euros,  242 in hex, MCMXVI in decimal.",
-
-    icon: "chrome://ubiquity/skin/icons/calculator.png",
-
-    author: { name: "Axel Boldt", email: "axelboldt@yahoo.com"},
-    homepage: "http://math-www.uni-paderborn.de/~axel/",
-    license: "Public domain",
-
-    // URL of Google page to which expression is to be appended. We want only 1 result.
-    _google_url: "http://www.google.com/search?hl=en&num=1&q=",
-
-    // Regular expression that matches a Google result page iff it is a calculator result;
-    // first subexpression matches the actual result
-    _calc_regexp: /\/calc_img\.gif.*?<b>(.*?)<\/b>/i,
-
-    // Link to calculator command help:
-    _calc_help: "Examples: 3^4/sqrt(2)-pi,&nbsp;&nbsp;3 inch in cm,&nbsp;&nbsp; speed of light,&nbsp;&nbsp; 0xAF in decimal<br><u><a href=\"http://www.googleguide.com/calculator.html\">(Command List)</a></u>",
-
-    execute: function( directObj ) {
-      var expression = directObj.text;
-      var url = this._google_url + encodeURIComponent(expression);
-      Utils.openUrlInBrowser( url );
-    },
-
-    preview: function( pblock, directObj ) {
-
-      var expression = directObj.text;
-      var cmd = this;
-
-      pblock.innerHTML = this._calc_help;
-
-      jQuery.get( this._google_url + encodeURIComponent(expression), {}, 
-         function( result_page ) {
-           var matchresult = result_page.match(cmd._calc_regexp);
-           if (matchresult) {
-              pblock.innerHTML = "<h2>" + matchresult[1] + "</h2>" + cmd._calc_help;
-           } else {
-              pblock.innerHTML = cmd._calc_help;
-           }
-       });
-      }
-  })
-
-
-
-// -----------------------------------------------------------------
-// SPARKLINE
-// -----------------------------------------------------------------
-
-function sparkline(data) {
-  var p = data;
-
-  var nw = "auto";
-  var nh = "auto";
-
-
-  var f = 2;
-  var w = ( nw == "auto" || nw == 0 ? p.length * f : nw - 0 );
-  var h = ( nh == "auto" || nh == 0 ? "1em" : nh );
-
-  var doc = context.focusedWindow.document;
-  var co = doc.createElement("canvas");
-
-  co.style.height = h;
-  co.style.width = w;
-  co.width = w;
-
-  var h = co.offsetHeight;
-  h = 10;
-  co.height = h;
-
-  var min = 9999;
-  var max = -1;
-
-  for ( var i = 0; i < p.length; i++ ) {
-    p[i] = p[i] - 0;
-    if ( p[i] < min ) min = p[i];
-    if ( p[i] > max ) max = p[i];
-  }
-
-  if ( co.getContext ) {
-    var c = co.getContext("2d");
-    c.strokeStyle = "red";
-    c.lineWidth = 1.0;
-    c.beginPath();
-
-    for ( var i = 0; i < p.length; i++ ) {
-      c.lineTo( (w / p.length) * i, h - (((p[i] - min) / (max - min)) * h) );
-    }
-
-    c.stroke();
-  }
-
-  return co.toDataURL();
-}
+const GCalcHelp = "http://www.googleguide.com/help/calculator.html";
+const noun_calc = {
+  name: "calc",
+  label: "expression",
+  rankLast: true,
+  noExternalCalls: true,
+  suggest: function n_calc_suggest(text, html, cb, selIndices) {
+    var simple = this._simple.test(text);
+    return [CmdUtils.makeSugg(text, "", simple, simple ? 1 : .5, selIndices)];
+  },
+  _simple: /^[\d.+\-*\/^%~(, )]+$/,
+};
 
 CmdUtils.CreateCommand({
-  name: "sparkline",
-  synonyms: ["graph"],
-  description: "Graphs the current selection, turning it into a sparkline.",
-  takes: {"data": noun_arb_text},
-  author: {name: "Aza Raskin", email:"aza@mozilla.com"},
-  license: "MIT",
-  help: "Select a set of numbers -- in a table or otherwise -- and use this command to graph them as a sparkline. Don't worry about non-numbers getting in there. It'll handle them.",
-
-  _cleanData: function( string ) {
-    var dirtyData = string.split(/\W/);
-    var data = [];
-    for(var i=0; i<dirtyData.length; i++){
-      var datum = parseFloat( dirtyData[i] );
-      if( datum.toString() != "NaN" ){
-        data.push( datum );
+  names: ["calculate", "gcalculate"],
+  argument: noun_calc,
+  description: "" + (
+    <>Calculates using <a href={GCalcHelp}>Google Calculator</a>
+    which has all the features of a scientific calculator,
+    knows constants such as the speed of light,
+    and can convert between units and currencies.<br/>
+    Uses <a href="http://jsfromhell.com/classes/math-parser">MathParser</a>
+    instead for simple expressions like <code>22/7</code>.</>),
+  help: ("Try <code>22/7, 25% of 700, sin(sqrt(ln(pi))), (1+i)^3, " +
+         "15 mod 9, (5 choose 2) / 3!, speed of light in miles per hour, " +
+         "3 dollars in euros, 242 in hex, MCMXVI in decimal</code>."),
+  icon: "chrome://ubiquity/skin/icons/calculator.png",
+  author: {name: "Axel Boldt", email: "axelboldt@yahoo.com"},
+  contributor: {name: "satyr", email: "murky.satyr@gmail.com"},
+  homepage: "http://math-www.uni-paderborn.de/~axel/",
+  license: "Public domain",
+  _math_parser: new MathParser,
+  // URL of Google page to which expression is to be appended.
+  // We want only 1 result.
+  _google_url: function (q) ("http://www.google.com/search?hl=en&num=1&q=" +
+                             encodeURIComponent(q)),
+  _calc: function ({text: exp, data: simple}, cb, pb) {
+    if (simple) {
+      try { var result = this._math_parser.parse(exp) } catch (e) {}
+      if (result != null) {
+        cb(result);
+        return;
       }
     }
-
-    return data;
+    var url = this._google_url(exp), fn = function gcalc(result_page) {
+      cb((/\/calc_img\.gif.*?<b>(.*?)<\/b>/i(result_page) || ",?")[1]);
+    };
+    pb ? CmdUtils.previewGet(pb, url, fn) : $.get(url, fn);
   },
-
-  _dataToSparkline: function( string ) {
-    var data = this._cleanData( string );
-    if( data.length < 2 ) return null;
-
-    var dataUrl = sparkline( data );
-    return img = "<img src='%'/>".replace(/%/, dataUrl);
+  execute: function ({object}) {
+    this._calc(object, function (result) {
+      CmdUtils.setSelection(result);
+    });
   },
-
-  preview: function(pblock, input) {
-    var img = this._dataToSparkline( input.text );
-
-    if( !img )
-      jQuery(pblock).text( "Requires numbers to graph." );
-    else
-      jQuery(pblock).empty().append( img ).height( "15px" );
-  },
-
-  execute: function( input ) {
-    var img = this._dataToSparkline( input.text );
-    if( img ) CmdUtils.setSelection( img );
+  preview: function (pb, {object}) {
+    if (!object.text) {
+      this.previewDefault(pb);
+      return;
+    }
+    this._calc(object, function (result) {
+      pb.innerHTML = (
+        '<div class="calculate">' +
+        '<b style="font-size:larger">' + result + '</b>' +
+        (typeof result === "string"
+         ? '<p><a href="' + GCalcHelp + '">Quick Reference</a></p>'
+         : "") +
+        '</div>');
+    }, pb);
   }
 });
 
@@ -403,103 +234,124 @@ CmdUtils.CreateCommand({
 // TRANSLATE COMMANDS
 // -----------------------------------------------------------------
 
-function translateTo( text, langCodePair, callback ) {
+function translateTo(text, langCodePair, callback, pblock) {
   var url = "http://ajax.googleapis.com/ajax/services/language/translate";
-
-  if( typeof(langCodePair.from) == "undefined" ) langCodePair.from = "";
-  if( typeof(langCodePair.to) == "undefined" ) langCodePair.to = "";
-
   var params = {
     v: "1.0",
     q: text,
-    langpair: langCodePair.from + "|" + langCodePair.to
+    langpair: (langCodePair.from || "") + "|" + (langCodePair.to || ""),
   };
-  
-  jQuery.get(url, params, function(data){
-    //var data = Utils.decodeJson(jsonData);
-
+  function onsuccess(data) {
     // The usefulness of this command is limited because of the
     // length restriction enforced by Google. A better way to do
     // this would be to split up the request into multiple chunks.
     // The other method is to contact Google and get a special
     // account.
-
     try {
-      var translatedText = data.responseData.translatedText;
+      var {translatedText} = data.responseData;
     } catch(e) {
-
       // If we get either of these error messages, that means Google wasn't
       // able to guess the originating language. Let's assume it was English.
       // TODO: Localize this.
-      var BAD_FROM_LANG_1 = "invalid translation language pair";
-      var BAD_FROM_LANG_2 = "could not reliably detect source language";
+      var BAD_FROM_LANG_1 = _("invalid translation language pair");
+      var BAD_FROM_LANG_2 = _("could not reliably detect source language");
       var errMsg = data.responseDetails;
       if( errMsg == BAD_FROM_LANG_1 || errMsg == BAD_FROM_LANG_2 ) {
         // Don't do infinite loops. If we already have a guess language
         // that matches the current forced from language, abort!
         if( langCodePair.from != "en" )
-          translateTo( text, {from:"en", to:langCodePair.to}, callback );
-        return;
+          translateTo(text, {from: "en", to: langCodePair.to},
+                      callback, pblock);
       }
       else {
-        displayMessage( "Translation Error: " + data.responseDetails );
+        displayMessage( _("Translation error: ${error}",
+                          {error:data.responseDetails}) );
       }
       return;
     }
+    callback(translatedText);
+  }
 
-    if( typeof callback == "function" )
-      callback( translatedText );
-    else
-      CmdUtils.setSelection( translatedText );
-
-    CmdUtils.setLastResult( translatedText );
-  }, "json");
+  if (pblock) CmdUtils.previewGet(pblock, url, params, onsuccess, "json");
+  else jQuery.get(url, params, onsuccess, "json");
 }
 
 CmdUtils.CreateCommand({
   DEFAULT_LANG_PREF : "extensions.ubiquity.default_translation_lang",
-  name: "translate",
+  names: ["translate"],
+  arguments: [
+    {role: "object", nountype: noun_arb_text, label: "text"},
+    {role: "source", nountype: noun_type_lang_google},
+    {role: "goal", nountype: noun_type_lang_google},
+  ],
   description: "Translates from one language to another.",
-  icon: "http://www.google.com/favicon.ico",
-  help: "You can specify the language to translate to, and the language to translate from.  For example," +
-	" try issuing &quot;translate mother from english to chinese&quot;. If you leave out the the" +
-	" languages, Ubiquity will try to guess what you want. It works on selected text in any web page, but" +
-        " there's a limit to how much it can translate at once (a couple of paragraphs.)",
-  takes: {"text to translate": noun_arb_text},
-  modifiers: {to: noun_type_language, from: noun_type_language},
-
-  execute: function( directObj, languages ) {
-    var toLangCode = languages.to.data || this._getDefaultLang();
-    var fromLang = languages.from.data || "";
-
-    translateTo( directObj.text, {to:toLangCode} );
+  icon: "chrome://ubiquity/skin/icons/google.ico",
+  help: "" + (
+    <>You can specify the language to translate to,
+    and the language to translate from.
+    For example, try issuing "translate mother from english to chinese".
+    If you leave out the languages, it will try to guess what you want.
+    It works on selected text in any web page,
+    but there&#39;s a limit (a couple of paragraphs)
+    to how much it can translate a selection at once.
+    If you want to translate a lot of text, leave out the input and
+    it will translate the whole page.</>),
+  execute: function ({object, goal, source}) {
+    var sl = source.data || "";
+    var tl = goal.data || this._getDefaultLang();
+    if (object.text)
+      translateTo(object.text,
+                  {from: sl, to: tl},
+                  function(translation) {
+                    CmdUtils.setSelection(translation);
+                  });
+    else
+      Utils.openUrlInBrowser(
+        "http://translate.google.com/translate" +
+        Utils.paramsToString({
+          u: context.focusedWindow.location.href,
+          sl: sl,
+          tl: tl,
+        }));
   },
-
-  // Returns the default language for translation.  order of defaults: 
-  // extensions.ubiquity.default_translation_lang > general.useragent.locale > "en" 
-  // And also, if there unknown language code is found any of these preference, we fall back to English.
-  _getDefaultLang: function() {
-      var userLocale = Application.prefs.getValue("general.useragent.locale", "en");
-      var defaultLang = Application.prefs.getValue(this.DEFAULT_LANG_PREF, userLocale);
-      // If defaultLang is invalid lang code, fall back to english.
-	  if (noun_type_language.getLangName(defaultLang) == null)  {
-	       return "en";
-	  }
-	  return defaultLang;	  
-  },
-  preview: function( pblock, directObj, languages ) {
+  preview: function (pblock, {object, goal, source}) {
+    var textToTranslate = object && object.text;
     var defaultLang = this._getDefaultLang();
-    var toLang = languages.to.text || noun_type_language.getLangName(defaultLang);
-    var toLangCode = languages.to.data || defaultLang;
-    var textToTranslate = directObj.text;
-
-    var lang = toLang[0].toUpperCase() + toLang.substr(1);
-
-    pblock.innerHTML = "Replaces the selected text with the " + lang + " translation:<br/>";
-    translateTo( textToTranslate, {to:toLangCode}, function( translation ) {
-      pblock.innerHTML = "Replaces the selected text with the " + lang + " translation:<br/>";
-      pblock.innerHTML += "<i style='padding:10px;color: #CCC;display:block;'>" + translation + "</i>";
-      });
+    var toLang = goal.text || noun_type_lang_google.getLangName(defaultLang);
+    var toLangCode = goal.data || defaultLang;
+    var fromLangCode = source.data || "";
+    if (!textToTranslate) {
+      var {href} = context.focusedWindow.location;
+      pblock.innerHTML = _("Translates ${url} into <b>${toLang}</b>.",
+                           { url: <a href={href}>{href}</a>.toXMLString(),
+                             toLang: toLang });
+      return;
+    }
+    var html = _(
+      "Replaces the selected text with the <b>${toLang}</b> translation:",
+      {toLang: toLang});
+    pblock.innerHTML = html;
+    translateTo(
+      textToTranslate,
+      {from: fromLangCode, to: toLangCode},
+      function(translation) {
+        pblock.innerHTML = html + <p><b>{translation}</b></p>;
+      },
+      pblock);
+  },
+  // Returns the default language for translation.  order of defaults:
+  // extensions.ubiquity.default_translation_lang > general.useragent.locale > "en"
+  // And also, if there unknown language code is found any of these preference,
+  // we fall back to English.
+  _getDefaultLang: function() {
+    var {prefs} = Application;
+    var userLocale = prefs.getValue("general.useragent.locale", "en");
+    var defaultLang = prefs.getValue(this.DEFAULT_LANG_PREF, userLocale);
+    // If defaultLang is invalid lang code, fall back to english.
+    if (!noun_type_lang_google.getLangName(defaultLang)) {
+      return "en";
+    }
+    return defaultLang;
   }
 });
 
@@ -507,179 +359,140 @@ CmdUtils.CreateCommand({
 // COMMANDS THAT CREATE NEW COMMANDS
 // -----------------------------------------------------------------
 
+/* TODO: This command should take another optional argument to
+ * provides an alternate name for the new command. */
 
+/* TODO combine both of these into a single command with a provider
+ * plugin?  i.e. "create command using/with/from bookmarklet",
+ * "create command using/with/from search box"
+ */
 CmdUtils.CreateCommand({
-  name: "create-bookmarklet-command-from",
-  takes: {"bookmarklet name": noun_type_bookmarklet},
-  description: "Create a new command from a bookmarklet",
+  names: ["create bookmarklet command"],
+  arguments: [{role: "source",
+               nountype: noun_type_bookmarklet,
+               label: "bookmarklet name"}],
+  description: "Creates a new Ubiquity command from a bookmarklet.",
+  help: "For instance, if you have a bookmarklet called 'press this', " +
+        "you can say 'create bookmarklet command from press this'.",
   author: {name: "Abimanyu Raja", email: "abimanyuraja@gmail.com"},
   license: "MPL",
-  preview: function(previewBlock,directObj) {
-    bookmarklet = directObj.text;
-    if(bookmarklet) previewBlock.innerHTML = "Creates a new command called <b>" + bookmarklet + " </b> that runs the " + bookmarklet + " bookmarklet";
+  preview: function(previewBlock, {source: {text, data}}) {
+    previewBlock.innerHTML = (
+      data
+      ? (<>Creates a new command called
+         <b>{this._formatName(text)}</b> that runs the following bookmarklet:
+         <pre style="white-space:pre-wrap">{decodeURI(data)}</pre></>)
+      : this.description);
   },
-  execute: function(directObj) {
-    var name  = directObj.text;
-    var url = directObj.data;
-    
+  execute: function({source}) {
+    var name = this._formatName(source.text);
+    var url = source.data;
+
     //build the piece of code that creates the command
-    var code =  '\n\n//Note: This command was automatically generated by the create-bookmarklet-command command.\n';
-    code += 'CmdUtils.makeBookmarkletCommand({\n';
-    code += '  name: "' + name + '",\n';
-    code += '  url: "'+url.replace("\"","\\\"", "gi")+'" \n';
-    code += '});\n';
-    
-    //append the code to Ubiqity's command editor
-    CmdUtils.UserCode.appendCode(code);
+    var code =  [
+      "// generated by " + this.name,
+      "CmdUtils.makeBookmarkletCommand({",
+      "  name: " + uneval(name) + ",",
+      "  url: " + uneval(url) + ",",
+      "});\n\n",
+      ].join("\n");
 
-    //tell the user we finished
-    displayMessage("You have created the command: " + name +
-                   ".  You can edit its source-code with the command-editor command.");
-    
-  }
+    //prepend the code to Ubiqity's command editor
+    CmdUtils.UserCode.prependCode(code);
+
+    tellTheUserWeFinished(name, this);
+  },
+  _formatName: function(n) n.toLowerCase(),
 });
-
 
 CmdUtils.CreateCommand({
-  description: "Creates a new Ubiquity command from a search-box.",
-  help: "1. Select a searchbox 2. Execute this command to create the new search command.",
-  name: "create-new-search-command",
+  names: ["create search command"],
+  description: "Creates a new Ubiquity command from a focused search-box " +
+               "and lets you set the command name.",
+  help: (<ol style="list-style-image:none">
+         <li>Select a searchbox.</li>
+         <li>Say 'create search command mysearch'.</li>
+         <li>Execute.</li>
+         <li>You now have a command called 'mysearch'.</li>
+         </ol>) + "",
   author: {name: "Marcello Herreshoff",
            homepage: "http://stanford.edu/~marce110/"},
-  contributors: ["Abimanyu Raja"],
+  contributors: ["Abimanyu Raja", "satyr"],
   icon: "chrome://ubiquity/skin/icons/search.png",
   license: "GPL/LGPL/MPL",
-  homepage: "http://stanford.edu/~marce110/verbs/new-command-from-search-box.html",
-  takes: {"command name": noun_arb_text},
-
-  _makeURI : function(aURL, aOriginCharset, aBaseURI){
-    var ioService = Components.classes["@mozilla.org/network/io-service;1"]
-                              .getService(Components.interfaces.nsIIOService);
-    return ioService.newURI(aURL, aOriginCharset, aBaseURI);
+  homepage:
+  "http://stanford.edu/~marce110/verbs/new-command-from-search-box.html",
+  arguments: [{role: "object",
+               nountype: noun_arb_text,
+               label: "command name"}],
+  preview: function(pblock, {object: {text}}) {
+    pblock.innerHTML = (
+      text
+      ? _("Creates a new search command called <b>${text}</b>", {text: text})
+      : this.description + this.help);
   },
-
-  _escapeNameValuePair: function(aName, aValue, aIsFormUrlEncoded){
-    if (aIsFormUrlEncoded)
-      return escape(aName + "=" + aValue);
-    else
-      return escape(aName) + "=" + escape(aValue);
-  },
-
-  preview: function(pblock, input) {
-    if(input.text.length < 1){
-      pblock.innerHTML = "1. Select a searchbox 2. Execute this command to create the new search command. ";
-    }else{
-      pblock.innerHTML = "Creates a new search command called <b>" + input.text + "</b>";
+  execute: function({object: {text: name}}) {
+    var node = context.focusedElement || 0;
+    var {form} = node;
+    if (!node || !form) {
+      displayMessage(
+        _("You need to focus a searchbox before running this command."));
+      return;
     }
-  },
-
-  execute: function(name){
-    //1. Figure out what this search-bar does.
-    var node = context.focusedElement;
-    if(!node || !node.form){
-      displayMessage("You need to click on a searchbox before running this command."); return;
-    }
-
-    //Copied from chrome://browser/content/browser.js, function AddKeywordForSearchField()
-    //Comments starting with MMH: indicates that something has been changed by me.
-    PLACEHOLDER = "{QUERY}"; //MMH: Note also: I have globally replaced "%s" with PLACEHOLDER
-    //COPY STARTS
-    var charset = node.ownerDocument.characterSet;
-
-    var docURI = this._makeURI(node.ownerDocument.URL,
-                         charset);
-
-    var formURI = this._makeURI(node.form.getAttribute("action"),
-                          charset,
-                          docURI);
-
-    var spec = formURI.spec;
-
-    var isURLEncoded =
-                 (node.form.method.toUpperCase() == "POST"
-                  && (node.form.enctype == "application/x-www-form-urlencoded" ||
-                      node.form.enctype == ""));
-
-    var el, type;
+    //1. Figure out what this searchbox does.
+    const PLACEHOLDER = "{QUERY}";
     var formData = [];
-
-    for (var i=0; i < node.form.elements.length; i++) {
-      el = node.form.elements[i];
-
-      if (!el.type) // happens with fieldsets
-        continue;
-
+    Array.forEach(form.elements, function(el) {
+      if (!el.type) return; // happens with fieldsets
       if (el == node) {
-        formData.push((isURLEncoded) ? this._escapeNameValuePair(el.name, PLACEHOLDER, true) :
-                                       // Don't escape PLACEHOLDER, just append
-                                       this._escapeNameValuePair(el.name, "", false) + PLACEHOLDER);
-        continue;
+        formData.push(this._encodePair(el.name, "") + PLACEHOLDER);
+        return;
       }
+      var type = el.type.toLowerCase();
+      if (/^(?:text(?:area)?|hidden)$/.test(type) ||
+          /^(?:checkbox|radio)$/.test(type) && el.checked)
+        formData.push(this._encodePair(el.name, el.value));
+      else if (/^select-(?:one|multiple)$/.test(type))
+        Array.forEach(el.options, function(o) {
+          if (o.selected)
+            formData.push(this._encodePair(el.name, o.value));
+        }, this);
+    }, this);
+    var doc = node.ownerDocument;
+    var uri = Utils.url({uri: form.getAttribute("action"), base: doc.URL});
+    var url = uri.spec;
+    var data = formData.join("&");
+    var post = form.method.toUpperCase() === "POST";
+    if (!post) url += "?" + data;
 
-      type = el.type.toLowerCase();
+    //2. Generate the name if not specified.
+    if (!name) name = uri.host || doc.title;
 
-      if ((type == "text" || type == "hidden" || type == "textarea") ||
-          ((type == "checkbox" || type == "radio") && el.checked)) {
-        formData.push(this._escapeNameValuePair(el.name, el.value, isURLEncoded));
-      //} else if (el instanceof HTMLSelectElement && el.selectedIndex >= 0) {
-      } else if (el.selectedIndex && el.name == "select" && el.selectedIndex >= 0){
-           //MMH: HTMLSelectElement was undefined.
-        for (var j=0; j < el.options.length; j++) {
-          if (el.options[j].selected)
-            formData.push(this._escapeNameValuePair(el.name, el.options[j].value,
-                                              isURLEncoded));
-        }
-      }
-    }
+    //3. Build the piece of code that creates the command
+    var codes = [];
+    codes.push(
+      '// generated by ' + this.name,
+      'CmdUtils.makeSearchCommand({',
+      '  name: ' + uneval(name) + ',',
+      '  url: ' + uneval(url) + ',');
+    post && codes.push(
+      '  postData: ' + uneval(data) + ',');
+    codes.push(
+      '});\n\n');
 
-    var postData;
-    
-    if (isURLEncoded)
-      postData = formData.join("&");
-    else
-      spec += "?" + formData.join("&");
-
-    //COPY ENDS
-
-    var url = spec;
-
-    //2. Now that we have the form's URL, figure out the name, description and favicon for the command
-    currentLocation = String(Application.activeWindow.activeTab.document.location);
-    domain = currentLocation.replace(/^(.*):\/\//, '').split('/')[0];
-    name = name.text;
-    if(!name){ var parts = domain.split('.'); name = parts[parts.length-2] + "-search";}
-    var icon = "http://"+domain+"/favicon.ico";
-    var description = "Searches " + domain;
-    var code;
-    
-    if(!postData){
-      //3. Build the piece of code that creates the command
-      code =  '\n\n//Note: This command was automatically generated by the create-new-search-command command.\n'
-      code += 'CmdUtils.makeSearchCommand({\n'
-      code += '  name: "'+name+'",\n';4
-      code += '  url: "'+url+'",\n';
-      code += '  icon: "'+icon+'",\n';
-      code += '  description: "'+description+'"\n';
-      code += '});\n';
-    }else{
-       code =  '\n\n//Note: This command was automatically generated by the create-new-search-command command.\n'
-       code += 'CmdUtils.CreateCommand({\n'
-       code += '  name: "'+name+'",\n';4
-       code += '  url: "'+url+'",\n';
-       code += '  icon: "'+icon+'",\n';
-       code += '  description: "'+description+'",\n';
-       code += '  takes: {"search term": noun_arb_text},\n';
-       code += '  execute: function(input){ var query = encodeURIComponent(input.text);\n';
-       code += 'var postData =  \"' + decodeURIComponent(String(postData)) + '\".replace(/%s|{QUERY}/g, query);\nUtils.openUrlInBrowser(\"' + formURI.spec+ '\", postData);}\n';
-       code += '});\n';
-    }
-        
-    
-    //4. Append the code to Ubiqity's code
-    CmdUtils.UserCode.appendCode(code);
+    //4. Prepend the code to command-editor
+    CmdUtils.UserCode.prependCode(codes.join("\n"));
 
     //5. Tell the user we finished
-    displayMessage("You have created the command: " + name +
-                   ".  You can edit its source-code with the command-editor command.");
-  }
+    tellTheUserWeFinished(name, this);
+  },
+  _encodePair: function(key, val)(encodeURIComponent(key) + "=" +
+                                  encodeURIComponent(val)),
 });
+
+function tellTheUserWeFinished(name, cmd) {
+  displayMessage(_(("You have created the command: ${name}. " +
+                    "You can edit its source-code with the command editor."),
+                   {name: name}),
+                 cmd);
+}

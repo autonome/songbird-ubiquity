@@ -2,6 +2,10 @@
 // HELPER OBJECT FOR CLOSING WINDOWS
 // -----------------------------------------------------------------
 
+Cu.import("resource://gre/modules/utils.js");
+
+XML.prettyPrinting = XML.ignoreWhitespace = false;
+
 var extApplication = { // helper method for correct quitting/restarting
   _warnOnClose: function app__warnOnClose( event ) {
     var prefs = {
@@ -48,41 +52,38 @@ var extApplication = { // helper method for correct quitting/restarting
 // WINDOW COMMANDS
 // -----------------------------------------------------------------
 
-// exit firefox entirely
 CmdUtils.CreateCommand({
-  name: "exit-firefox",
-  description: "Exits firefox",
+  names: ["exit firefox"],
+  description: "Exits Firefox.",
   execute: function() {
     extApplication.quit();
   }
 });
 
-// restarts firefox
 CmdUtils.CreateCommand({
-  name: "restart-firefox",
-  description: "Restarts firefox",
+  names: ["restart firefox"],
+  description: "Restarts Firefox.",
   execute: function() {
     extApplication.restart();
   }
 });
 
-// closes current firefox window
 // TODO: if last window is closed, we should offer to save session
 CmdUtils.CreateCommand({
-  name: "close-window",
-  description: "Close current window",
+  names: ["close window"],
+  description: "Closes current window.",
   execute: function() {
     extApplication.close();
   }
 });
 
-// toggles fullscreen
+// TODO this should maybe become a 'toggle' command, i.e. the verb is
+// 'turn on' or 'turn off'.
 CmdUtils.CreateCommand({
-  name: "fullscreen",
-  description: "Toggles fullscreen mode",
+  names: ["fullscreen"],
+  description: "Toggles fullscreen mode.",
   execute: function() {
-    var win = CmdUtils.getWindow();
-    win.fullScreen = win.fullScreen ? false : true;
+    CmdUtils.getWindow().fullScreen ^= 1;
   }
 });
 
@@ -90,262 +91,161 @@ CmdUtils.CreateCommand({
 // TAB COMMANDS
 // -----------------------------------------------------------------
 
+function tabPreview(msg)(
+  function preview(pblock, {object: {text, data: tab}}) {
+    msg = _(msg); // "Changes to" / "Closes"
+    pblock.innerHTML = (
+      tab
+      ? <div class="tab">
+          {msg} <b>{text}</b>
+          <p><img src={CmdUtils.getTabSnapshot(tab, {width: 480})}/></p>
+        </div>
+      : this.description);
+  });
+
 CmdUtils.CreateCommand({
-  name: "tab",
-  takes: {"tab name": noun_type_tab},
+  name: "switch to tab",
+  argument: noun_type_tab,
   icon: "chrome://ubiquity/skin/icons/tab_go.png",
-  description: "Switches to the tab that matches the given name.",
-  execute: function( tab ) {
-    var tabName = tab.text;
-    var tab = Utils.tabs.get(tabName);
-    if (tab) {
-      // TODO: window.focus() is missing on 1.9.2pre
-      if (tab._window && tab._window.focus) {
-        tab._window.focus();
-      }
-      tab.focus();
-      // Focus on tab content
-      // TODO: window.focus() is missing on 1.9.2pre
-      if (tab._window && tab._window.content) {
-        tab._window.content.focus();
-      }
-    }
+  description: "Switches to the tab whose title or URL matches the input.",
+  execute: function({object: {data: tab}}) {
+    if (!tab) return;
+    // TODO: window.focus() is missing on 1.9.2pre
+    var win = tab._window;
+    if (win && win.focus) win.focus();
+    tab.focus();
+    // Focus on tab content
+    if (win && win.content) win.content.focus();
   },
-
-  preview: function(pblock, tab) {
-    var tabName = tab.text;
-
-    if (tabName == this._cacheKey) {
-      pblock.innerHTML = this._cacheValue;
-    }
-    else if (tabName.length > 1 && (tab = Utils.tabs.get(tabName))) {
-      var imgData = CmdUtils.getTabSnapshot(tab, {width:500});
-      pblock.innerHTML = "Changes to <b style=\"color:yellow\">%s</b> tab."
-                         .replace(/%s/, tabName);
-      pblock.innerHTML += "<br/><img src='%s'>".replace(/%s/, imgData);
-    }
-    else {
-      pblock.innerHTML = "Switch to tab by name.";
-    }
-
-    this._cacheKey = tabName;
-    this._cacheValue = pblock.innerHTML;
-  }
+  preview: tabPreview("Changes to"),
 });
 
-// Closes a single tab
 CmdUtils.CreateCommand({
-  name: "close-tab",
-  takes: {"tab name": noun_type_tab},
+  name: "close tab",
+  argument: noun_type_tab,
   icon: "chrome://ubiquity/skin/icons/tab_delete.png",
-  description: "Closes the tab that matches the given name, "
-             + "or if current tab if no name is supplied",
-  execute: function(directObj) {
-    var tabName = directObj.text;
-    var tab = Utils.tabs.get(tabName);
-    if (tabName && tab) {
-      tab.close();
-    }
-    else {
-      Application.activeWindow.activeTab.close();
-    }
-    displayMessage(tabName + " tab closed");
+  description: ("Closes the tab whose title or URL matches the input " +
+                "or the current tab if no tab matches."),
+  execute: function(args) {
+    (args.object.data || Application.activeWindow.activeTab).close();
   },
-
-  preview: function(pblock, tab) {
-    var tabName = tab.text;
-    if(tabName.length > 1 && (tab = Utils.tabs.get(tabName))) {
-      var imgData = CmdUtils.getTabSnapshot(tab, {width:500});
-      pblock.innerHTML = "Closes the <b style=\"color:yellow\">%s</b> tab."
-                         .replace(/%s/, tabName);
-      pblock.innerHTML += "<br/><img src='%s'>".replace(/%s/, imgData);
-    }
-    else {
-      pblock.innerHTML = "Closes the tab by name.";
-    }
-  }
+  preview: tabPreview("Closes"),
 });
 
-
-//Closes all tabs related to the specified word
 CmdUtils.CreateCommand({
-  name: "close-related-tabs",
-  takes: {"related word": noun_arb_text},
+  names: ["close all tabs with"],
+  arguments: [{ role: 'object', nountype: noun_arb_text, label: 'related word'}],
   icon: "chrome://ubiquity/skin/icons/tab_delete.png",
   description: "Closes all open tabs that have the given word in common.",
-  preview: function(pblock, directObj) {
-    var query = directObj.text;
-    var relatedWord = query.toLowerCase();
-    var html = null;
-    if(relatedWord.length != 0) {
-      html = "Closes the following tabs that are related to "
-           + "<b style=\"color:yellow\">\"" + relatedWord + "\"</b> : <ul>";
-      var numTabs = 0;
-
-      Application.activeWindow.tabs.forEach(function(tab) {
-        if (tab.uri.spec.toLowerCase().match(relatedWord) ||
-            tab.document.title.toLowerCase().match(relatedWord)) {
-      	  html += "<li>" + tab.document.title + "</li>";
-      	  numTabs++;
-        }
-      } );
-
-      if(numTabs == 0) {
-        html = "No tabs related to <b style=\"color:yellow\">\""
-             + relatedWord + "\"</b>";
-      }
-      else {
-        html += "</ul>";
-      }
-    }
-    else {
-      html = "Closes all tabs related to the word";
-    }
-    jQuery(pblock).html(html);
+  execute: function({object: {text}}) {
+    if (!text) return;
+    var tabs = Utils.tabs.search(text);
+    for each (var t in tabs) t.close();
+    displayMessage(_("${num} tabs closed.", {num: tabs.length}), this);
   },
-
-  execute: function(directObj) {
-    var query = directObj.text;
-    var relatedWord = query.toLowerCase();
-    var numTabs = 0;
-
-    Application.activeWindow.tabs.forEach(function(tab) {
-      if (tab.uri.spec.toLowerCase().match(relatedWord) ||
-          tab.document.title.toLowerCase().match(relatedWord)) {
-        tab.close();
-        numTabs++;
-      }
-    });
-
-    displayMessage(numTabs + " tabs closed");
-  }
-
+  preview: function(pblock, {object: {text, html}}) {
+    if (!text) {
+      pblock.innerHTML = this.description;
+      return;
+    }
+    pblock.innerHTML = _(
+      <><![CDATA[
+        <div class="close-all-tabs">
+        {if tabs.length}
+          Closes tabs related to <b>${html}</b> :
+          <ul>{for tab in tabs}${tab|asList}{/for}</ul>
+        {else}
+          No tabs are related to <b>${html}</b>.
+        {/if}
+        </div>
+        ]]></> + "",
+      { tabs: Utils.tabs.search(text),
+        html: html,
+        _MODIFIERS: {asList: this._lister} });
+  },
+  _lister: function({document}) "" + (
+    <li>{document.title}<br/><code><small>{document.URL}</small></code></li>),
 });
 
-
-function countTabs(filter, noHtml) {
-  var count = 0;
-  if (filter.length < 1) {
-     count = Application.activeWindow.tabs.length;
-  }
-  else {
-    Application.activeWindow.tabs.forEach(function(tab) {
-      var title = tab.document.title;
-      if (title.toLowerCase().indexOf(filter.toLowerCase()) != -1)
-        count++;
-    });
-  }
-  var tabTemplate = "tab";
-  if (count > 1) {
-    tabTemplate += "s";
-  }
-  if (noHtml) {
-    var previewTemplate = "${count} "+tabTemplate
-                        + "{if filter} matching '${filter}'{else} total{/if}.";
-    }
-  else {
-    var previewTemplate = "<b>${count}</b> "+tabTemplate
-                        + "{if filter} matching <i>${filter}</i>{else} total{/if}.";
-  }
-  var previewData = {
-    count:  count,
-    filter: filter
-  };
-  return CmdUtils.renderTemplate(previewTemplate, previewData);
-}
-
-
 CmdUtils.CreateCommand({
-  name: "count-tabs",
-  license: "MPL",
-  description: "Counts the number of tabs you have open.",
-  takes: { filter: noun_arb_text },
-  preview: function(previewBlock, inputObject) {
-    previewBlock.innerHTML = countTabs(inputObject.text);
+  names: ["count tabs"],
+  description: "Counts the number of opened tabs. Takes an optional " +
+                "filter term to count number of tabs matching filter term.",
+  arguments: {object: noun_arb_text},
+  icon: "chrome://ubiquity/skin/icons/tab_go.png",
+  execute: function(args) {
+    displayMessage($(this._count(args)).text(), this);
   },
-  execute: function(inputObject) {
-    displayMessage(countTabs(inputObject.text, true));
+  preview: function(pblock, args) {
+    pblock.innerHTML = this._count(args);
+  },
+  _count: function({object: {text, html}}) {
+    var count = (text ? Utils.tabs.search(text) : Utils.tabs.get()).length;
+    return _('<div class="count-tabs"><b>${count}</b> ' +
+             'tab{if count > 1}s{/if} ' +
+             '{if html}matching <b>${html}</b>{else}total{/if}.</div>',
+             {count: count, html: html});
   }
 });
 
 
-// refreshes current tab
 CmdUtils.CreateCommand({
-  name: "refresh",
-  description: "Refresh current document",
+  names: ["refresh", "reload"],
+  description: "Refreshes the current page.",
   execute: function() {
     var win = CmdUtils.getWindow();
     win.location.reload(true);
   }
 });
 
-// bookmark current tab
 CmdUtils.CreateCommand({
-  name: "bookmark",
-  description: "Add current document to bookmarks",
+  names: ["bookmark"],
+  description: "Adds the current page to bookmarks.",
   execute: function() {
-    var win = CmdUtils.getWindowInsecure();
-    var doc = CmdUtils.getDocument();
+    var {title, URL} = CmdUtils.getDocument();
     try {
-      win.sidebar.addPanel(doc.title, win.location.href, "");
-    }
-    catch (e) {
-      displayMessage("Page could not be bookmarked!" + ((e) ? " - "+e : "" ));
+      Application.bookmarks.unfiled.addBookmark(title, Utils.url(URL));
+    } catch (e) {
+      displayMessage({
+        text: _("Page could not be bookmarked!"),
+        exception: e,
+      }, this);
     }
   }
 });
 
-// print current tab
 CmdUtils.CreateCommand({
-  name: "print",
-  description: "Print current page",
+  names: ["print"],
+  description: "Prints the current page.",
   execute: function() {
     var win = CmdUtils.getWindow();
     win.print();
   }
 });
 
-// goes back in history
+// goes back/forward in history
+(function historyCommand(way, sign) {
+  CmdUtils.CreateCommand({
+    names: ["go " + way],
+    description: "Goes " + way + " in history.",
+    arguments: {object_steps: noun_type_number},
+    preview: function(pblock, args) {
+      pblock.innerHTML = _(
+        "Go " + way + " ${num} step{if num > 1}s{/if} in history.",
+        {num: args.object.data});
+    },
+    execute: function(args) {
+      CmdUtils.getWindow().history.go(args.object.data * sign);
+    }
+  });
+  return arguments.callee;
+})("back", -1)("forward", 1);
+
 CmdUtils.CreateCommand({
-  name: "back",
-  description: "Go back in history",
-  takes: {steps: noun_type_number},
-
-  preview: function(pblock, steps) {
-    var template = "Go back ${steps} {if steps == '1'} "
-                 + "step {else} steps {/if} in history";
-    pblock.innerHTML = CmdUtils.renderTemplate(template, {"steps": steps.text});
-  },
-  execute: function(steps) {
-    var win = CmdUtils.getWindow();
-    win.history.go(-Math.abs(parseInt(steps.text)));
-  }
-});
-
-// goes forward in history
-CmdUtils.CreateCommand({
-  name: "forward",
-  description: "Go forward in history",
-  takes: {steps: noun_type_number},
-
-  preview: function(pblock, steps) {
-    var template = "Go forward ${steps} {if steps == '1'} "
-                 + "step {else} steps {/if} in history";
-    pblock.innerHTML = CmdUtils.renderTemplate(template, {"steps": steps.text});
-  },
-  execute: function(steps) {
-    var win = CmdUtils.getWindow();
-    win.history.go(Math.abs(parseInt(steps.text)));
-  }
-});
-
-// go to home page
-CmdUtils.CreateCommand({
-  name: "home",
-  description: "Go to home page",
+  names: ["go home"],
+  description: "Goes to home page.",
   execute: function() {
-    var win = CmdUtils.getWindow();
-    win.home();
+    CmdUtils.getWindow().home();
   }
 });
 
@@ -353,9 +253,8 @@ CmdUtils.CreateCommand({
 // ZOOM RELATED
 // -----------------------------------------------------------------
 
-
 function setFullPageZoom(level) {
-  var navigator1 = window.
+  var navigator1 = context.chromeWindow.
                    QueryInterface(Ci.nsIInterfaceRequestor).
                    getInterface(Ci.nsIWebNavigation);
   var docShell = navigator1.QueryInterface(Ci.nsIDocShell);
@@ -366,25 +265,17 @@ function setFullPageZoom(level) {
 }
 
 CmdUtils.CreateCommand({
-  name: "zoom",
-  takes: {"percentage": noun_type_percentage},
+  names: ["zoom"],
+  argument: noun_type_percentage,
   icon: "chrome://ubiquity/skin/icons/magnifier.png",
   description: "Zooms the Firefox window in or out.",
-  preview: function(pBlock, directObj) {
-    var replacement = "a given percentage";
-    if (directObj.text) {
-      replacement = directObj.text;
-    }
-    pBlock.innerHTML = "Zooms the Firefox window to " + replacement
-                       + " of its normal size.";
+  preview: function(pBlock, args) {
+    pBlock.innerHTML = _(
+      "Zooms the Firefox window to ${text} of its normal size.",
+      args.object);
   },
-  execute: function(directObj) {
-    if (directObj.data) {
-      setFullPageZoom(directObj.data);
-    }
-    else {
-      displayMessage("You must provide a percentage to zoom to.");
-    }
+  execute: function(args) {
+    setFullPageZoom(args.object.data);
   }
 });
 
@@ -392,71 +283,155 @@ CmdUtils.CreateCommand({
 // TAGGING COMMANDS
 // -----------------------------------------------------------------
 
-// http://blog.stevenlevithan.com/archives/faster-trim-javascript
-function trim (str) {
-  var str = str.replace(/^\s\s*/, ''),
-      ws  = /\s/,
-      i   = str.length;
-  while (ws.test(str.charAt(--i)));
-  return str.slice(0, i + 1);
-}
-
 // command to tag the currently loaded URI via the humane prompt
 CmdUtils.CreateCommand({
-  name: "tag",
-  homepage: "http://autonome.wordpress.com/",
-  author: {name: "Dietrich Ayala", email: "dietrich@mozilla.com"},
+  names: ["tag"],
+  description: "Adds tags to describe the current page.",
+  help: "If the page is currently bookmarked, adds a tag or tags " +
+        "(separated by spaces) to the current bookmark.  If the page " +
+        "is not bookmarked, adds a bookmark to 'Unsorted bookmarks' and " +
+        "also adds the tag or tags to that bookmark.",
+  author: {
+    name: "Dietrich Ayala",
+    email: "dietrich@mozilla.com",
+    homepage: "http://autonome.wordpress.com/"},
   license: "MPL/GPL/LGPL",
-  takes : {"text" : noun_arb_text},
   icon: "chrome://mozapps/skin/places/tagContainerIcon.png",
-  description: "Adds a tag to describe the current page",
-  preview: function(aEl, aTagsString) {
-    aEl.innerHTML = ("Describe the current page with tags" +
-                     (aTagsString.text.length ? " (" +
-                      aTagsString.text + ")" : "."));
+  argument: noun_type_tag,
+  preview: function(aEl, args) {
+    aEl.innerHTML = _(
+      ("Describes the current page with" +
+       "{if html} these tags:<p><b>${html}</b></p>{else} tags.{/if}"),
+      args.object);
   },
-  execute: function(aTagsString) {
-    var recentWindow = Utils.currentChromeWindow;
-    var doc = recentWindow.content.document;
-    if (!doc)
-      return;
+  execute: function({object: {text, data}}) {
+    var doc = CmdUtils.getDocument();
+    var {tagging, bookmarks} = PlacesUtils;
+    var currentURI = Utils.url(doc.URL);
 
-    Utils.reportInfo("URI: " + doc.location);
-
-    var iosvc = Cc["@mozilla.org/network/io-service;1"].
-                getService(Ci.nsIIOService);
-    var currentURI = iosvc.newURI(doc.location, null, null);
-
-    var bookmarks = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
-                    getService(Ci.nsINavBookmarksService);
     if (!bookmarks.isBookmarked(currentURI)) {
       // create unfiled bookmark
       bookmarks.insertBookmark(bookmarks.unfiledBookmarksFolder, currentURI,
                                bookmarks.DEFAULT_INDEX, doc.title);
     }
-
-    // if there's a comma, split on commas, otherwise use spaces
-    var splitChar = " ";
-    if (aTagsString.text.indexOf(",") != -1)
-      splitChar = ",";
-    var tags = aTagsString.text.split(splitChar);
-
-    // trim leading/trailing spaces
-    tags = tags.map(function(a) { return trim(a); });
-
-    var tagging = Cc["@mozilla.org/browser/tagging-service;1"].
-                  getService(Ci.nsITaggingService);
-    tagging.tagURI(currentURI, tags);
+    tagging.tagURI(currentURI, data);
   }
 });
 
-// TODO: Move this to developer.js on the next release of Ubiq.
-// I'm leaving it here so that it gets pushed out to users
-// now. -Aza
 CmdUtils.CreateCommand({
-  name: "report-bug",
-  description: "Reports a Ubiquity bug.",
-  execute: function() {
-    Utils.openUrlInBrowser("chrome://ubiquity/content/report-bug.html");
+  names: ["run bookmarklet", "bml"],
+  description: "Runs a bookmarklet from your favorites.",
+  help: "Enter nothing to reload the list.",
+  author: {name: "satyr", email: "murky.satyr@gmail.com"},
+  license: "MIT",
+  icon: "chrome://ubiquity/skin/icons/application_view_list.png",
+  argument: noun_type_bookmarklet,
+  execute: function({object}) {
+    if (object.data) CmdUtils.getWindow().location = object.data;
+    else {
+      noun_type_bookmarklet.load();
+      displayMessage("Reloaded", this);
+    }
+  },
+  preview: function(pbl, {object: {data}}) {
+    pbl.innerHTML = (
+      data
+      ? (<pre class="bookmarklet" style="white-space:pre-wrap">{data}</pre>)
+      : this.previewDefault());
   }
+});
+
+CmdUtils.CreateCommand({
+  names: ["undo closed tabs", "uct"],
+  description: "Reopens tabs you've closed recently.",
+  help: "" + (
+    <ul style="list-style-image:none">
+    <li>Use accesskey or click to undo.</li>
+    <li>Type to filter, then execute to undo all.</li>
+    </ul>),
+  author: {name: "satyr", email: "murky.satyr@gmail.com"},
+  contributor: {name: "powchin", homepage: "http://friendfeed.com/powchin"},
+  license: "MIT",
+  icon: "chrome://ubiquity/skin/icons/arrow_undo.png",
+  arguments: {"object title or URL": noun_arb_text},
+  execute: function(args) {
+    for each(var {id} in this._find(args.object.text)) this._undo(id);
+  },
+  preview: function(pbl, args) {
+    var me = this;
+    if (!me._SS.getClosedTabCount(context.chromeWindow)) {
+      me._puts(pbl, _("No closed tabs."));
+      return;
+    }
+    var tabs = me._find(args.object.text);
+    if (!tabs[0]) {
+      me._puts(pbl, _("No matched tabs."));
+      return;
+    }
+    CmdUtils.previewList(pbl, tabs.map(me._html), function(i, ev) {
+      $(ev.target).closest("li").remove();
+      me._undo(tabs[i].id);
+    }, me._css);
+  },
+  previewDelay: 256,
+  _list: null,
+  _html: function({title, image, url})(
+    <> <img class="icon" src={image}/> <span class="title">{title}</span>
+       <code class="url">{url}</code></>),
+  _puts: function(pbl, msg) {
+    pbl.innerHTML = <i>{msg}</i>.toXMLString() + this.help;
+  },
+  _find: function(txt) {
+    var list = this._list =
+      eval(this._SS.getClosedTabData(context.chromeWindow));
+    list.forEach(this._mark);
+    if (txt) {
+      try { var re = RegExp(txt, "i") }
+      catch(e){ re = RegExp(txt.replace(/\W/g, "\\$&"), "i") }
+      list = list.filter(function(t) re.test(t.title) || re.test(t.url));
+    }
+    return list;
+  },
+  _mark: function(tab, i) {
+    tab.id = i;
+    tab.url = tab.state.entries[0].url;
+  },
+  _undo: function(id) {
+    this._list.every(function(tab, i, list) {
+      if (id !== tab.id) return true;
+      this._SS.undoCloseTab(context.chromeWindow, i);
+      list.splice(i, 1);
+      return false;
+    }, this);
+  },
+  _css: <><![CDATA[
+    li {white-space: nowrap}
+    .icon {width: 16px; height: 16px; vertical-align: middle}
+    .url {font-size: smaller}
+    ]]></>,
+  _SS: (Cc["@mozilla.org/browser/sessionstore;1"]
+        .getService(Ci.nsISessionStore)),
+});
+
+CmdUtils.CreateCommand({
+  names: ["check livemark"],
+  description: "Checks your livemarks.",
+  help: "Execute to open the site.",
+  author: {name: "satyr", email: "murky.satyr@gmail.com"},
+  icon: "chrome://browser/skin/livemark-folder.png",
+  argument: noun_type_livemark,
+  execute: function({object: {data}}) {
+    if (data) this._open(data.site);
+  },
+  preview: function(pb, {object: {data}}) {
+    if (!data) {
+      pb.innerHTML = this.description;
+      return;
+    }
+    var dict = {};
+    for each (var it in data.items)
+      dict[it.uri] = <span> <a href={it.uri}>{it.title}</a> </span>;
+    CmdUtils.previewList(pb, dict, this._open);
+  },
+  _open: function(u) { Utils.openUrlInBrowser(u) },
 });

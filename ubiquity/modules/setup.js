@@ -21,6 +21,7 @@
  *   Atul Varma <atul@mozilla.com>
  *   Jono DiCarlo <jdicarlo@mozilla.com>
  *   Maria Emerson <memerson@mozilla.com>
+ *   Michael Yoshitaka Erlewine <mitcho@mitcho.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -45,10 +46,14 @@ Components.utils.import("resource://ubiquity/modules/default_feed_plugin.js");
 Components.utils.import("resource://ubiquity/modules/webpage_feed_plugin.js");
 Components.utils.import("resource://ubiquity/modules/python_feed_plugin.js");
 Components.utils.import("resource://ubiquity/modules/locked_down_feed_plugin.js");
+//Components.utils.import("resource://ubiquity/modules/gm_feed_plugin.js");
+Components.utils.import("resource://ubiquity/modules/stylish_feed_plugin.js");
 Components.utils.import("resource://ubiquity/modules/annotation_memory.js");
+Components.utils.import("resource://ubiquity/modules/suggestion_memory.js");
 Components.utils.import("resource://ubiquity/modules/feedaggregator.js");
 Components.utils.import("resource://ubiquity/modules/webjsm.js");
 Components.utils.import("resource://ubiquity/modules/prefcommands.js");
+Components.utils.import("resource://ubiquity/modules/skinsvc.js");
 
 var Cc = Components.classes;
 var Ci = Components.interfaces;
@@ -105,11 +110,7 @@ let UbiquitySetup = {
 
                    {page: "search.html",
                     source: "search.xhtml",
-                    title: "Mozilla Web Search Commands"},
-
-                   {page: "image.html",
-                    source: "image.xhtml",
-                    title: "Mozilla Image-Related Commands"}],
+                    title: "Mozilla Web Search Commands"}],
 
   __getExtDir: function __getExtDir() {
     let extMgr = Cc["@mozilla.org/extensions/manager;1"]
@@ -151,7 +152,7 @@ let UbiquitySetup = {
   __setupFinalizer: function __setupFinalizer() {
     var observer = {
       observe: function(subject, topic, data) {
-	gServices.feedManager.finalize();
+        gServices.feedManager.finalize();
       }
     };
 
@@ -168,10 +169,7 @@ let UbiquitySetup = {
         annDb.remove(false);
 
       // Reset all skins.
-      let jsm = {};
-      Components.utils.import("resource://ubiquity/modules/skinsvc.js",
-                              jsm);
-      jsm.SkinSvc.reset();
+      SkinSvc.reset();
 
       // We'll reset the preferences for our extension here.  Unfortunately,
       // there doesn't seem to be an easy way to get this from FUEL, so
@@ -189,6 +187,9 @@ let UbiquitySetup = {
           if (prefs.prefHasUserValue(name))
             prefs.clearUserPref(name);
         });
+
+      // Reset suggestion memory:
+      (new SuggestionMemory("main_parser")).wipe();
 
       // This is likely redundant since we just reset all prefs, but we'll
       // do it for completeness...
@@ -233,6 +234,17 @@ let UbiquitySetup = {
     Application.prefs.setValue(RESET_SCHEDULED_PREF, value);
   },
 
+  __removeExtinctStandardFeeds: function __rmExtinctStdFeeds(feedManager) {
+    var OLD_STD_FEED_URI = "https://ubiquity.mozilla.com/standard-feeds/";
+
+    feedManager.getSubscribedFeeds().forEach(
+      function removeExtinct(feed) {
+        if (feed.uri.spec.indexOf(OLD_STD_FEED_URI) == 0 ||
+            feed.title == "Mozilla Image-Related Commands")
+          feed.purge();
+      });
+  },
+
   createServices: function createServices() {
     if (!gServices) {
       // Compare the version in our preferences from our version in the
@@ -263,7 +275,14 @@ let UbiquitySetup = {
                                                     msgService,
                                                     gWebJsModule,
                                                     this.languageCode,
-                                                    this.getBaseUri());
+                                                    this.getBaseUri(),
+                                                    this.parserVersion);
+
+      /*var gmfp = new GreaseMonkeyFeedPlugin(feedManager, msgService,
+                                            gWebJsModule);
+      */
+      var sfp = new StylishFeedPlugin(feedManager, msgService,
+                                            gWebJsModule);
 
       var ldfPlugin = new LockedDownFeedPlugin(feedManager,
                                                msgService,
@@ -283,15 +302,22 @@ let UbiquitySetup = {
       );
       disabledStorage.attach(cmdSource);
 
+      var skinService = new SkinSvc(gWebJsModule);
+      skinService.updateAllSkins();
+      skinService.loadCurrentSkin();
+
       gServices = {commandSource: cmdSource,
                    feedManager: feedManager,
-                   messageService: msgService};
+                   messageService: msgService,
+                   skinService: skinService};
 
       this.__setupFinalizer();
 
       PrefCommands.init(feedManager);
 
-      if (this.isNewlyInstalledOrUpgraded)
+      if (this.isNewlyInstalledOrUpgraded) {
+        this.__removeExtinctStandardFeeds(feedManager);
+
         // For some reason, the following function isn't executed
         // atomically by Javascript; perhaps something being called is
         // getting the '@mozilla.org/thread-manager;1' service and
@@ -302,6 +328,7 @@ let UbiquitySetup = {
           this.getBaseUri() + "standard-feeds/",
           this.STANDARD_FEEDS
         );
+      }
 
       cmdSource.refresh();
     }
@@ -311,6 +338,7 @@ let UbiquitySetup = {
 
   setupWindow: function setupWindow(window) {
     gServices.feedManager.installToWindow(window);
+    gServices.skinService.installToWindow(window);
 
     var PAGE_LOAD_PREF = "extensions.ubiquity.enablePageLoadHandlers";
 
@@ -335,34 +363,41 @@ let UbiquitySetup = {
     return lang;
   },
 
+  get parserVersion() {
+    var prefs = Components.classes["@mozilla.org/preferences-service;1"]
+                          .getService(Components.interfaces.nsIPrefService);
+    prefs = prefs.getBranch("extensions.ubiquity.");
+    return prefs.getIntPref("parserVersion");
+  },
+
   get version() {
     return Application.extensions.get("ubiquity@labs.mozilla.com").version;
   },
 
   get standardFeedsUri() {
-    if (this.isInstalledAsXpi()) {
-      var STANDARD_FEEDS_PREF = "extensions.ubiquity.standardFeedsUri";
-      return Application.prefs.getValue(STANDARD_FEEDS_PREF, "");
-    } else
-      return this.getBaseUri() + "standard-feeds/";
+    return this.getBaseUri() + "standard-feeds/";
+  },
+
+  get doNounFirstExternals() {
+    var prefs = Components.classes["@mozilla.org/preferences-service;1"]
+                          .getService(Components.interfaces.nsIPrefService);
+    prefs = prefs.getBranch("extensions.ubiquity.");
+    return prefs.getIntPref("doNounFirstExternals");
   }
 };
-
 function DisabledCmdStorage(prefName) {
-  let str = Application.prefs.getValue(prefName, '{}');
-  let disabledCommands = Utils.decodeJson(str);
+  var disabledCommands =
+    Utils.json.decode(Application.prefs.getValue(prefName, "{}"));
 
   this.getDisabledCommands = function getDisabledCommands() {
     return disabledCommands;
   };
 
-  function onDisableChange(eventName, value) {
-    disabledCommands[value.name] = value.value;
-    Application.prefs.setValue(prefName,
-                               Utils.encodeJson(disabledCommands));
-  };
+  function onDisableChange(eventName) {
+    Application.prefs.setValue(prefName, Utils.json.encode(disabledCommands));
+  }
 
   this.attach = function attach(cmdSource) {
-    cmdSource.addListener('disabled-command-change', onDisableChange);
+    cmdSource.addListener("disabled-command-change", onDisableChange);
   };
 }

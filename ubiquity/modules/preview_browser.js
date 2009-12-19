@@ -38,81 +38,28 @@ var EXPORTED_SYMBOLS = ["PreviewBrowser"];
 
 Components.utils.import("resource://ubiquity/modules/utils.js");
 
-function makePreviewBrowser(unsafePblock, url, cb) {
-  var xulIframe = null;
-  var browser = null;
-
-  var width = 490;
-  var height = 500;
-
-  function onXulLoaded(event) {
-    xulIframe.removeEventListener("load",
-                                  onXulLoaded,
-                                  true);
-
-    browser = xulIframe.contentDocument.createElement("browser");
-
-    // Possible fix for #633. At the very least, it allows this component to
-    // be used from within a chrome URL that's loaded in a browser tab, though
-    // I'm not sure why it's XPCNativeWrapped in the first place. -AV
-    if (browser.wrappedJSObject)
-      browser = browser.wrappedJSObject;
-
-    browser.setAttribute("src", url);
-    browser.setAttribute("disablesecurity", true);
-    browser.setAttribute("type", "content");
-    browser.setAttribute("width", width);
-    browser.setAttribute("height", height);
-
-    // Ensure that a vertical scroll bar is displayed when necessary.
-    browser.addEventListener(
-      "load",
-      function() {
-        this.contentDocument.body.style.overflowY = "auto";
-      },
-      true
-    );
-
-    browser.addEventListener("load",
-                             onPreviewLoaded,
-                             true);
-
-    xulIframe.contentDocument.documentElement.appendChild(browser);
-  }
-
-  function onPreviewLoaded() {
-    browser.removeEventListener("load",
-                                onPreviewLoaded,
-                                true);
-
-    cb(browser);
-    unsafePblock = null;
-    browser = null;
-    xulIframe = null;
-  }
-
-  xulIframe = unsafePblock.ownerDocument.createElement("iframe");
-  xulIframe.setAttribute("src",
-                         "chrome://ubiquity/content/content-preview.xul");
-  xulIframe.style.border = "none";
-  xulIframe.setAttribute("width", width);
-  xulIframe.setAttribute("height", height);
-
-  xulIframe.addEventListener("load",
-                             onXulLoaded,
-                             true);
-  unsafePblock.innerHTML = "";
-  unsafePblock.appendChild(xulIframe);
-}
-
-function PreviewBrowser(previewPaneNode, defaultUrl) {
+function PreviewBrowser(browser, defaultUrl) {
   this.__isActive = false;
   this.__defaultUrl = defaultUrl;
   this.__queuedPreview = null;
-  this.__previewBrowser = null;
+  this.__previewBrowser = browser;
   this.__previewBrowserCreatedCallback = null;
   this.__previewBrowserUrlLoadedCallback = null;
-  this.__containingNode = previewPaneNode;
+
+  function resizeContainer(ev) {
+    Utils.clearTimeout(resizeContainer.tid);
+    resizeContainer.tid = Utils.setTimeout(resizeDelayed, 16, this);
+  }
+  function resizeDelayed(doc) {
+    browser.parentNode.style.height = doc.height + "px";
+  }
+  browser.addEventListener("load", function bindResize(e) {
+    for each (var h in ["load", "DOMSubtreeModified"])
+      this.contentDocument.addEventListener(h, resizeContainer, true);
+  }, true);
+
+  browser.setAttribute("type", "content");
+  browser.setAttribute("src", defaultUrl);
 }
 
 PreviewBrowser.prototype = {
@@ -131,9 +78,9 @@ PreviewBrowser.prototype = {
     if (this.__previewBrowser)
       cb();
     else {
-      if (this.__previewBrowserCreatedCallback) {
+      if (this.__previewBrowserCreatedCallback)
         this.__previewBrowserCreatedCallback = cb;
-      } else {
+      else {
         var self = this;
         this.__previewBrowserCreatedCallback = cb;
         makePreviewBrowser(this.__containingNode,
@@ -153,14 +100,15 @@ PreviewBrowser.prototype = {
 
   _ensurePreviewBrowserUrlLoaded : function PB__EPBUL(url, cb) {
     var currUrl = this.__previewBrowser.getAttribute("src");
-    if (url == currUrl) {
+    if (url === currUrl) {
       if (this.__previewBrowserUrlLoadedCallback)
         // The URL is still loading.
         this.__previewBrowserUrlLoadedCallback = cb;
       else
         // The URL is already loaded.
         cb();
-    } else {
+    }
+    else {
       var self = this;
       function onLoad() {
         self.__previewBrowser.removeEventListener("load", onLoad, true);
@@ -176,22 +124,24 @@ PreviewBrowser.prototype = {
     }
   },
 
-  activateAccessKey: function PB_activateAccessKey(number) {
-    if (this.__previewBrowser &&
-        this.__previewBrowser.contentDocument) {
-      var doc = this.__previewBrowser.contentDocument;
-      for (var i = 0; i < doc.links.length; i++) {
-        var elem = doc.links[i];
-        if (elem.getAttribute("accesskey") == number) {
-          var evt = doc.createEvent("MouseEvents");
-          evt.initMouseEvent("click", true, true, doc.defaultView,
-                             0, 0, 0, 0, 0, false, false, false, false, 0,
-                             null);
-          elem.dispatchEvent(evt);
-          return;
+  activateAccessKey: function PB_activateAccessKey(code) {
+    var doc = this.__previewBrowser.contentDocument;
+    if (!doc) return;
+    var win = doc.defaultView;
+    var key = String.fromCharCode(code).toLowerCase();
+    var xpr = doc.evaluate('/html/body//*[@accesskey]', doc, null,
+                           win.XPathResult.ORDERED_NODE_ITERATOR_TYPE , null);
+    for (let lmn; (lmn = xpr.iterateNext());)
+      if (lmn.getAttribute("accesskey").toLowerCase() === key) {
+        if (/^a$/i.test(lmn.nodeName)) {
+          let evt = doc.createEvent("MouseEvents");
+          evt.initMouseEvent("click", true, true, win, 0, 0, 0, 0, 0,
+                             false, false, false, false, 0, null);
+          lmn.dispatchEvent(evt);
         }
+        else lmn.focus();
+        break;
       }
-    }
   },
 
   queuePreview : function PB__queuePreview(url, delay, cb) {
@@ -238,11 +188,12 @@ PreviewBrowser.prototype = {
       showPreview();
   },
 
-  finalize: function finalize() {
-    this.__queuedPreview = null;
-    this.__previewBrowser = null;
-    this.__previewBrowserCreatedCallback = null;
-    this.__previewBrowserUrlLoadedCallback = null;
-    this.__containingNode = null;
+  scroll: function PB_scroll(xRate, yRate) {
+    var win = this.__previewBrowser.contentWindow;
+    if (win) win.scrollBy(win.innerWidth * xRate, win.innerHeight * yRate);
+  },
+
+  finalize: function PB_finalize() {
+    for (var key in this) delete this[key];
   }
 };

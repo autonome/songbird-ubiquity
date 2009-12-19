@@ -103,7 +103,7 @@ function _getDebugInfo() {
 function visualize(info, elem) {
   var table = $('<table class="data"></table>');
 
-  for (name in info)
+  for (var name in info)
     if (info.hasOwnProperty(name)) {
       var value = info[name];
       var row = $('<tr class="item"></tr>');
@@ -148,6 +148,8 @@ function doSubmit(info) {
                });
   }
 
+  Components.utils.reportError("Utils.encodeJson(info) is " +
+    Utils.encodeJson(info));
   jQuery.ajax(
     {contentType: "application/json",
      type: "POST",
