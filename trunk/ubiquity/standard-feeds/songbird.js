@@ -111,22 +111,7 @@ CmdUtils.CreateCommand({
   }
 })
 
-CmdUtils.CreateCommand({ 
-  name: "hypemachine",
-  description: "Search music blogs and upcoming concerts",
-  homepage: "http://geekshadow.com/",
-  author: { name: "Antoine Turmel", email: "geekshadow@gmail.com"},
-  license: "MPL/GPL/LGPL",
-  icon: "chrome://service-icons/skin/hypemachine.ico",
-  takes: {"song": noun_arb_text},
-  preview: function( pblock ) {pblock.innerHTML=this.description;},
-  execute: function( searchTerm ) {
-    var url = "http://hypem.com/search/" + searchTerm.text + "/1/";
-    Utils.openUrlInBrowser( url );
-  }
-}) 
-
-makeSearchCommand({
+CmdUtils.makeSearchCommand({
   name: "addons",
   description: "Search for Songbird Add-ons",
   homepage: "http://geekshadow.com/",
@@ -143,6 +128,7 @@ makeSearchCommand({
     displayMessage( msg );
   }
 })
+
 
 CmdUtils.CreateCommand({
   name: "mute",

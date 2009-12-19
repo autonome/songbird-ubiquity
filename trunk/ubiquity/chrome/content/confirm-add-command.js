@@ -36,9 +36,15 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-Components.utils.import("resource://ubiquity/modules/utils.js");
-Components.utils.import("resource://ubiquity/modules/codesource.js");
-Components.utils.import("resource://ubiquity/modules/setup.js");
+var Cu = Components.utils;
+
+Cu.import("resource://ubiquity/modules/utils.js");
+Cu.import("resource://ubiquity/modules/codesource.js");
+Cu.import("resource://ubiquity/modules/setup.js");
+Cu.import("resource://ubiquity/modules/localization_utils.js");
+
+var L = LocalizationUtils.propertySelector(
+  "chrome://ubiquity/locale/aboutubiquity.properties");
 
 function getUrlParams() {
   var urlFragments = document.URL.split("?")[1];
@@ -66,8 +72,9 @@ function showConfirmation() {
   $("#errorPageContainer").css("background-image",
                                "url('" + largeIconUrl + "')");
 
-  $("title").text("Ubiquity Command Feed Subscription Successful");
-  $("#errorTitle").html("<h1>Subscription Successful</h1>");
+  $("title").text(L("ubiquity.subscription.successtitle"));
+  $("#errorTitle").html(
+    "<h1>" + L("ubiquity.subscription.successheader") + "</h1>");
 
   $("#errorShortDesc").html($("#confirmationShortDesc").html());
   $("#errorLongDesc").html($("#confirmationLongDesc").html());
@@ -126,7 +133,7 @@ function onReady() {
   $("#targetLink").attr("href", gCommandFeedInfo.url);
 
   function onAutoupdateClicked() {
-    if ($("#autoupdate").attr("checked")){
+    if ($("#autoupdate[checked=true]").length){
       $("#autoupdate-warning").slideDown();
       $('html, body').animate({ scrollTop: 10000 }, 1000); //Fixes #280
     }else{

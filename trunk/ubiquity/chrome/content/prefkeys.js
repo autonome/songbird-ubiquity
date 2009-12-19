@@ -34,8 +34,10 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+Components.utils.import("resource://ubiquity/modules/utils.js");
+
 var PrefKeys = {
-  
+
   KEYCODE_PREF : "extensions.ubiquity.keycode",
   KEYMODIFIER_PREF : "extensions.ubiquity.keymodifier",
   
@@ -48,21 +50,10 @@ var PrefKeys = {
   },
   
   onLoad : function(){
-
-    var defaultKeyModifier = "ALT";
-    //default key modifier for windows is CTRL
-    var xulRuntime = Components.classes["@mozilla.org/xre/app-info;1"]
-                               .getService(Components.interfaces.nsIXULRuntime);
-    if(xulRuntime.OS == "WINNT"){
-      defaultKeyModifier = "CTRL";
-    }
-    
-    var keyCode = Application.prefs.getValue(this.KEYCODE_PREF, 32);
-    var keyModifier = Application.prefs.getValue(this.KEYMODIFIER_PREF, defaultKeyModifier);
-    
-    var keyText = keyModifier + "+" 
-                  + this._convertToText(keyCode) 
-                  + " (Click here to change)";
+    var keyCombo = this.getKeyCombo();
+    var keyText = keyCombo[0] + "+" 
+                  + keyCombo[1]
+                  + " (" + L("ubiquity.prefkeys.clickhere") + ")";
     $("#keyInputBox").val(keyText);
   },
 	
@@ -71,7 +62,7 @@ var PrefKeys = {
     aEvent.preventDefault();
     aEvent.stopPropagation();
 
-    var keyCode = parseInt(aEvent.keyCode);		
+    var keyCode = parseInt(aEvent.keyCode);
     var keyModifier = (aEvent.altKey) ? "ALT"
                     : (aEvent.ctrlKey) ? "CTRL"
                     : (aEvent.shiftKey) ? "SHIFT"
@@ -79,11 +70,11 @@ var PrefKeys = {
                     : "";
 
     if(keyModifier == ""){
-      $("#keyNotify").text("You must have a modifier like SHIFT, CTRL, ALT or META");
+      $("#keyNotify").text(L("ubiquity.prefkeys.notifybadmodifier"));
       return;
     }
   
-    // Only alphanumeric keys are allowed as shortcuts because 
+    // Only alphanumeric keys are allowed as shortcuts because
     // it does not seem to possible to get keycodes properly for 
     // combinations like "shift+]". In this case, pressing "shift+]"
     // will set the keycode to be that of "}" and displaying "shift+}"
@@ -104,9 +95,22 @@ var PrefKeys = {
                   + this._convertToText(keyCode) 
                   + " (Click here to change)";
     $("#keyInputBox").val(keyText).blur();
-	  $("#keyNotify").text("Your key has been changed to " 
-	                        + keyModifier + "+" 
+	  $("#keyNotify").text(L("ubiquity.prefkeys.confirmchange")
+	                       + " " + keyModifier + "+" 
                           + this._convertToText(keyCode));                          
                           
+  },
+  
+  getKeyCombo : function(){
+    var defaultKeyModifier = "ALT";
+    //default key modifier for windows is CTRL
+    if (Utils.OS === "WINNT") {
+      defaultKeyModifier = "CTRL";
+    }
+    
+    var keyCode = Application.prefs.getValue(this.KEYCODE_PREF, 32);
+    var keyModifier = Application.prefs.getValue(this.KEYMODIFIER_PREF,
+                                                 defaultKeyModifier);
+    return [keyModifier, this._convertToText(keyCode)];
   }
 }

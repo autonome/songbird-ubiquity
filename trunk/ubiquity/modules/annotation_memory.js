@@ -140,7 +140,7 @@ function AnnotationService(connection) {
 
   self.getPagesWithAnnotation = function(name) {
     var results = [];
-    for (uri in ann)
+    for (var uri in ann)
       if (typeof(ann[uri][name]) != 'undefined')
         results.push(urls[uri]);
     return results;
@@ -153,7 +153,18 @@ function AnnotationService(connection) {
     return false;
   };
 
-  // === {{{AnnotationService.getPageAnnotation()}}} ===
+  // === {{{AnnotationService.toJSON()}}} ===
+  //
+  // This method returns the annotation service's data as a
+  // JSON object.
+
+  self.toJSON = function() {
+    var json = Cc["@mozilla.org/dom/json;1"]
+      .createInstance(Ci.nsIJSON);
+    return json.encode(ann);
+  };
+
+  // === {{{AnnotationService#getPageAnnotation()}}} ===
   //
   // This method behaves just like its {{{nsIAnnotationService}}}
   // counterpart, with the exception that it can optionally take a
@@ -179,7 +190,8 @@ function AnnotationService(connection) {
       urls[uri.spec] = uri;
     }
 
-    if (ann[uri.spec][name] != value) {
+    if (typeof(ann[uri.spec][name]) == "undefined" ||
+        ann[uri.spec][name] != value) {
       // Only write out to the database if our actual contents have
       // changed.
       ann[uri.spec][name] = value;

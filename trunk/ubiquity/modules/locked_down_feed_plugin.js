@@ -19,6 +19,8 @@
  *
  * Contributor(s):
  *   Atul Varma <atul@mozilla.com>
+ *   Michael Yoshitaka Erlewine <mitcho@mitcho.com>
+ *   Satoshi Murakami <murky.satyr@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -64,7 +66,7 @@ Components.utils.import("resource://ubiquity/modules/utils.js");
 // feed manager that's passed to it.
 
 function LockedDownFeedPlugin(feedManager, messageService, webJsm) {
-  // === {{{LDFP.type}}} ===
+  // === {{{LDFP#type}}} ===
   //
   // Ubiquity uses the value of the {{{rel}}} attribute contained in a
   // HTML page's {{{<link>}}} tag to determine what, if any, the feed
@@ -75,7 +77,7 @@ function LockedDownFeedPlugin(feedManager, messageService, webJsm) {
 
   this.type = "locked-down-commands";
 
-  // === {{{LDFP.onSubscribeClick()}}} ===
+  // === {{{LDFP#onSubscribeClick()}}} ===
   //
   // This method is called by the feed manager whenever the user clicks
   // the "Subscribe..." button for any LDFP feed that they're presented
@@ -106,7 +108,7 @@ function LockedDownFeedPlugin(feedManager, messageService, webJsm) {
     messageService.displayMessage("Subscription successful!");
   };
 
-  // === {{{LDFP.makeFeed()}}} ===
+  // === {{{LDFP#makeFeed()}}} ===
   //
   // This factory method is called by the feed manager whenever it
   // needs to instantiate a feed that the user is subscribing to.
@@ -135,7 +137,7 @@ function LockedDownFeedPlugin(feedManager, messageService, webJsm) {
 
 // == The Feed Subclass ==
 //
-// This private class is created by {{{LDFP.makeFeed()}}}. Its
+// This private class is created by {{{LDFP#makeFeed()}}}. Its
 // constructor takes the base {{{Feed}}} object that it will use as
 // its prototype.
 //
@@ -155,6 +157,9 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
     codeSource = new RemoteUriCodeSource(baseFeedInfo);
   else
     codeSource = new LocalUriCodeSource(baseFeedInfo.srcUri.spec);
+
+  let feedUri = baseFeedInfo.srcUri;
+
   var codeCache;
   var sandboxFactory = new SandboxFactory({}, "http://www.mozilla.com",
                                           true);
@@ -165,7 +170,7 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
     self.commands = {};
   }
 
-  // === {{{LDFPFeed.pageLoadFuncs}}} ===
+  // === {{{LDFPFeed#pageLoadFuncs}}} ===
   //
   // This public property is an array of page-load functions that are called
   // whenever a web page has finished loading. Each page-load function is
@@ -176,24 +181,14 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
 
   self.pageLoadFuncs = [];
 
-  // === {{{LDFPFeed.nounTypes}}} ===
-  //
-  // This public property is an array of noun types defined by the
-  // feed.
-  //
-  // LDFP feeds can't define their own noun-types, so this property will
-  // always be empty.
-
-  self.nounTypes = [];
-
-  // === {{{LDFPFeed.commands}}} ===
+  // === {{{LDFPFeed#commands}}} ===
   //
   // This public property is an object that maps command names to command
   // objects, for each command defined by the feed.
 
   self.commands = {};
-
-  // === {{{LDFPFeed.refresh()}}} ===
+  
+  // === {{{LDFPFeed#refresh()}}} ===
   //
   // This public method is called whenever Ubiquity would like the feed
   // to check for any changes in itself. It has no return value.
@@ -218,7 +213,7 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
 
       function safeModifiers(modifiers) {
         var safeMods = {};
-        for (modLabel in modifiers) {
+        for (var modLabel in modifiers) {
           if (typeof(modLabel) != "string")
             throw new Error("Assertion error: expected string!");
           safeMods[modLabel] = {text: modifiers[modLabel].text};
@@ -349,22 +344,66 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
       //
       // This function has no return value.
 
-      function CmdUtils_CreateCommand(info) {
-        info = new XPCSafeJSObjectWrapper(info);
+      function CmdUtils_CreateCommand(originalInfo) {
 
-        if (!info.name)
-          throw new Error("Command name not provided.");
+        Components.utils.import("resource://ubiquity/modules/localization_utils.js");
+
+        let originalNames = [];
+        if (originalInfo.names) {
+          for each (let n in originalInfo.names)
+            if (typeof n == 'string')
+              originalNames.push(n);
+        } else {
+          originalNames = [originalInfo.name];
+        }
+
+        // For some reason the XPCSafeJSObjectWrapper would take some 
+        // string properties in info (for example some of the names)
+        // and give them the constructor Array, rather than String,
+        // so they wouldn't behave correctly later.
+        // We're keeping a copy of info so we can replace the names
+        // out later.
+        let info = new XPCSafeJSObjectWrapper(originalInfo);
+
         if (!info.execute)
           throw new Error("Command execute function not provided.");
-
+      
         let cmd = {
-          execute: function execute(context, directObject, modifiers) {
+          feedUri: feedUri,
+          execute: function LDFP_execute(context, args) {
+            LocalizationUtils.setLocalizationContext(feedUri, cmd.referenceName, 'execute');
             currentContext = context;
-            info.execute(safeDirectObj(directObject),
-                         safeModifiers(modifiers));
+            info.execute(safeModifiers(args));
             currentContext = null;
           }
         };
+
+        // TODO: This might not be *safe*.
+        // ensure name, names and synonyms
+        { let names = originalNames;
+          if (!names)
+            throw Error("CreateCommand: name or names is required.");
+          if (!Utils.isArray(names))
+            names = (names + "").split(/\s{0,}\|\s{0,}/);
+      
+          // we must keep the first name from the original feed around as an
+          // identifier. This is used in the command id and in localizations
+          cmd.referenceName = names[0];
+          cmd.id = feedUri.spec + "#" + cmd.referenceName;
+      
+          if (names.length > 1)
+            cmd.synonyms = names.slice(1);
+          cmd.name = names[0];
+          cmd.names = names;
+        }
+
+        // Returns the first key in a dictionary.
+        function getKey(dict) {
+          for (var key in dict) return key;
+          // if no keys in dict:
+          return null;
+        }
+
         if (info.takes)
           for (var directObjLabel in info.takes) {
             if (typeof(directObjLabel) != "string")
@@ -372,7 +411,7 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
                               directObjLabel);
             var regExp = safeConvertRegExp(info.takes[directObjLabel]);
             cmd.DOLabel = directObjLabel;
-            cmd.DOType = NounUtils.nounTypeFromRegExp(regExp);
+            cmd.DOType = NounUtils.NounType(regExp);
             break;
           }
         if (info.modifiers) {
@@ -381,24 +420,63 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
             if (typeof(modLabel) != "string")
               throw new Error("Modifier label is not a string: " +
                               directObjLabel);
-            var regExp = safeConvertRegExp(info.modifiers[modLabel]);
-            cmd.modifiers[modLabel] = NounUtils.nounTypeFromRegExp(regExp);
+            cmd.modifiers[modLabel] = toSafeNounType(info.modifiers[modLabel]);
           }
         }
+        
+        // TODO: This might not be *safe*.
+        { let args = info.arguments || info.argument;
+          /* NEW IMPROVED ARGUMENT API */
+          if (args) {
+            // handle simplified syntax
+            if (typeof args.suggest === "function")
+              // argument: noun
+              args = [{role: "object", nountype: args}];
+            else if (!Utils.isArray(args)) {
+              // arguments: {role: noun, ...}
+              // arguments: {"role label": noun, ...}
+              let a = [];
+              for (let key in args) {
+                let [role, label] = /^[a-z]+(?=(?:[$_:\s]([^]+))?)/(key) || 0;
+                if (role) a.push({role: role, label: label, nountype: args[key]});
+              }
+              args = a;
+            }
+            // we have to go pick these one by one by key, as 
+            // XPCSafeJSObjectWrapper makes them inaccessible directly
+            // via "for each". Ask satyr or mitcho for details.
+            for (let key in args) toSafeNounType(args[key], "nountype");
+          }
+
+          // This extra step here which admittedly looks redundant is to
+          // "fix" arrays to enable proper enumeration. This is due to some
+          // weird behavior which has to do with XPCSafeJSObjectWrapper.
+          // Ask satyr or mitcho for details.
+          cmd.arguments = [args[key] for (key in args)];
+          
+        }
+        
+        function toSafeNounType(obj, key) {
+          var val = obj[key];
+          if (!val) return;
+          val = safeConvertRegExp(val);
+          var noun = obj[key] = NounUtils.NounType(val);
+          return noun;
+        }
+        
         let preview = info.preview;
         if (typeof(preview) == "string") {
           preview = htmlSanitize(preview);
-          cmd.preview = function cmd_preview(context, directObject,
-                                             modifiers, previewBlock) {
+          cmd.preview = function LDFP_preview(context, previewBlock) {
+            LocalizationUtils.setLocalizationContext(feedUri, cmd.referenceName, 'preview');
             previewBlock.innerHTML = preview;
           };
         } else if (typeof(preview) == "function") {
-          cmd.preview = function cmd_preview(context, directObject,
-                                             modifiers, previewBlock) {
+          cmd.preview = function LDFP_preview(context, previewBlock, args) {
+            LocalizationUtils.setLocalizationContext(feedUri, cmd.referenceName, 'preview');
             var fakePreviewBlock = safe({innerHTML: ""});
             info.preview(fakePreviewBlock,
-                         safeDirectObj(directObject),
-                         safeModifiers(modifiers));
+                         safeModifiers(args));
             var html = fakePreviewBlock.innerHTML;
             if (typeof(html) == "string")
               previewBlock.innerHTML = htmlSanitize(html);
@@ -419,9 +497,9 @@ function LDFPFeed(baseFeedInfo, eventHub, messageService, htmlSanitize) {
 
         setMetadata(info, cmd, CMD_METADATA_SCHEMA, htmlSanitize);
 
-        cmd = finishCommand(cmd);
+        cmd.proto = info;
 
-        self.commands[cmd.name] = cmd;
+        self.commands[cmd.id] = finishCommand(cmd);
       }
       sandbox.importFunction(CmdUtils_CreateCommand);
 
@@ -514,7 +592,7 @@ function makeSafeObj(obj, sandboxFactory, sandbox) {
 // untrusted metadata, a schema, and an HTML sanitization function.
 
 function setMetadata(metadata, object, schema, htmlSanitize) {
-  for (propName in schema) {
+  for (var propName in schema) {
     var propVal = metadata[propName];
     var propType = schema[propName];
     if (typeof(propVal) == "string") {

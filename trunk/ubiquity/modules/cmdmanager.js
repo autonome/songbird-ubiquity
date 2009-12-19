@@ -22,6 +22,7 @@
  *   Jono DiCarlo <jdicarlo@mozilla.com>
  *   Maria Emerson <memerson@mozilla.com>
  *   Blair McBride <unfocused@gmail.com>
+ *   Satoshi Murakami <murky.satyr@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -39,38 +40,55 @@
 
 var EXPORTED_SYMBOLS = ["CommandManager"];
 
-Components.utils.import("resource://ubiquity/modules/utils.js");
-Components.utils.import("resource://ubiquity/modules/preview_browser.js");
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
 
-// TODO make this a preference instead
-const MAX_SUGGESTIONS = 5;
+Cu.import("resource://ubiquity/modules/utils.js");
+Cu.import("resource://ubiquity/modules/preview_browser.js");
 
-var DEFAULT_PREVIEW_URL = (
-  ('data:text/html,' +
-   encodeURI('<html><body class="ubiquity-preview-content" ' +
-             'style="overflow: hidden; margin: 0; padding: 0;">' +
-             '</body></html>'))
-);
+const {prefs} = Utils.Application;
+const DEFAULT_PREVIEW_URL = "chrome://ubiquity/content/preview.html";
+const MIN_MAX_SUGGS = 1;
+const MAX_MAX_SUGGS = 42;
+
+CommandManager.DEFAULT_MAX_SUGGESTIONS = 5;
+CommandManager.MAX_SUGGESTIONS_PREF = "extensions.ubiquity.maxSuggestions";
+CommandManager.__defineGetter__("maxSuggestions", function () {
+  return prefs.getValue(this.MAX_SUGGESTIONS_PREF,
+                        this.DEFAULT_MAX_SUGGESTIONS);
+});
+CommandManager.__defineSetter__("maxSuggestions", function (value) {
+  var num = Math.max(MIN_MAX_SUGGS, Math.min(value | 0, MAX_MAX_SUGGS));
+  prefs.setValue(this.MAX_SUGGESTIONS_PREF, num);
+});
 
 function CommandManager(cmdSource, msgService, parser, suggsNode,
                         previewPaneNode, helpNode) {
   this.__cmdSource = cmdSource;
   this.__msgService = msgService;
-  this.__hilitedSuggestion = 0;
+  this.__hilitedIndex = 0;
   this.__lastInput = "";
+  this.__lastHilitedIndex = -1;
+  this.__lastAsyncSuggestionCb = Boolean;
   this.__nlParser = parser;
   this.__activeQuery = null;
-  this.__domNodes = {suggs: suggsNode,
-                     preview: previewPaneNode,
-                     help: helpNode};
-  this._previewer = new PreviewBrowser(previewPaneNode,
-                                       DEFAULT_PREVIEW_URL);
+  this.__domNodes = {
+    suggs: suggsNode,
+    suggsIframe: suggsNode.getElementsByTagName("iframe")[0],
+    preview: previewPaneNode,
+    help: helpNode};
+  this.__previewer = new PreviewBrowser(
+    previewPaneNode.getElementsByTagNameNS(
+      "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
+      "browser")[0],
+    DEFAULT_PREVIEW_URL);
+  this.__commandsByServiceDomain = null;
 
   var self = this;
 
   function onCommandsReloaded() {
     parser.setCommandList(cmdSource.getAllCommands());
-    parser.setNounList(cmdSource.getAllNounTypes());
   }
 
   cmdSource.addListener("feeds-reloaded", onCommandsReloaded);
@@ -80,27 +98,40 @@ function CommandManager(cmdSource, msgService, parser, suggsNode,
 
   this.finalize = function CM_finalize() {
     cmdSource.removeListener("feeds-reloaded", onCommandsReloaded);
-    this.__cmdSource = null;
-    this.__msgService = null;
-    this.__nlParser = null;
-    this.__domNodes = null;
+    for (let key in this) delete this[key];
   };
+
+  this.__domNodes.suggsIframe.contentDocument.addEventListener(
+    "click",
+    function onSuggClick(ev) {
+      var {target} = ev;
+      if (target === this) return;
+      while (!target.hasAttribute("index"))
+        if (!(target = target.parentNode)) return;
+      self.__hilitedIndex = +target.getAttribute("index");
+      self.__lastAsyncSuggestionCb();
+      ev.preventDefault();
+      ev.stopPropagation();
+    },
+    true);
 }
 
 CommandManager.prototype = {
   setPreviewState: function CM_setPreviewState(state) {
+    var nodes = this.__domNodes;
     switch (state) {
+    case "computing-suggestions":
     case "with-suggestions":
-      this.__domNodes.suggs.style.display = "block";
-      this.__domNodes.preview.style.display = "block";
-      this.__domNodes.help.style.display = "none";
+      nodes.suggs.style.display = "block";
+      nodes.preview.style.display = "block";
+      nodes.help.style.display = "none";
       break;
     case "no-suggestions":
-      this.__domNodes.suggs.style.display = "none";
-      this.__domNodes.preview.style.display = "none";
-      this.__domNodes.help.style.display = "block";
-      if (this._previewer.isActive)
-        this._previewer.queuePreview(
+      nodes.suggs.style.display = "none";
+      nodes.preview.style.display = "none";
+      nodes.help.style.display = "block";
+      if (this.__previewer.isActive)
+        this.__previewer.queuePreview(
           null,
           0,
           function(pblock) { pblock.innerHTML = ""; }
@@ -111,182 +142,180 @@ CommandManager.prototype = {
     }
   },
 
-  refresh : function CM_refresh() {
+  refresh: function CM_refresh() {
     this.__cmdSource.refresh();
-    this.__hilitedSuggestion = 0;
-    this.__lastInput = "";
+    this.reset();
   },
 
-  moveIndicationUp : function CM_moveIndicationUp(context) {
-    this.__hilitedSuggestion -= 1;
-    if (this.__hilitedSuggestion < 0) {
-      this.__hilitedSuggestion = this.__activeQuery.suggestionList.length - 1;
-    }
-    this._previewAndSuggest(context, true);
+  moveIndicationUp: function CM_moveIndicationUp(context) {
+    if (--this.__hilitedIndex < 0)
+      this.__hilitedIndex = this.__activeQuery.suggestionList.length - 1;
+    this._renderAll(context);
   },
 
-  moveIndicationDown : function CM_moveIndicationDown(context) {
-    this.__hilitedSuggestion += 1;
-    if (this.__hilitedSuggestion > this.__activeQuery.suggestionList.length - 1) {
-      this.__hilitedSuggestion = 0;
-    }
-    this._previewAndSuggest(context, true);
+  moveIndicationDown: function CM_moveIndicationDown(context) {
+    if (++this.__hilitedIndex >= this.__activeQuery.suggestionList.length)
+      this.__hilitedIndex = 0;
+    this._renderAll(context);
   },
 
-  _renderSuggestions : function CMD__renderSuggestions() {
+  _renderSuggestions: function CM__renderSuggestions() {
     var content = "";
-    let suggestionList = this.__activeQuery.suggestionList;
-    for (var x = 0; x < suggestionList.length; x++) {
-      var suggText = suggestionList[x].getDisplayText();
-      var suggIconUrl = suggestionList[x].getIcon();
-      var suggIcon = "";
-      if(suggIconUrl) {
-        suggIcon = "<img src=\"" + Utils.escapeHtml(suggIconUrl) + "\"/>";
-      }
-      suggText = "<div class=\"cmdicon\">" + suggIcon + "</div>&nbsp;" + suggText;
-      if ( x == this.__hilitedSuggestion ) {
-        content += "<div class=\"hilited\"><div class=\"hilited-text\">" + suggText + "</div>";
-        content += "</div>";
-      } else {
-        content += "<div class=\"suggested\">" + suggText + "</div>";
-      }
+    var {suggestionList} = this.__activeQuery;
+    for (let x = 0, l = suggestionList.length; x < l; ++x) {
+      let suggText = suggestionList[x].displayHtml;
+      let suggIconUrl = suggestionList[x].icon;
+      let suggIcon = "";
+      if (suggIconUrl)
+        suggIcon = '<img src="' + Utils.escapeHtml(suggIconUrl) + '"/>';
+      suggText = '<div class="cmdicon">' + suggIcon + "</div>" + suggText;
+      content += ('<div class="suggested' +
+                  (x === this.__hilitedIndex ? " hilited" : "") +
+                  '" index="' + x + '">' + suggText + "</div>");
     }
-    this.__domNodes.suggs.innerHTML = content;
+    this.__domNodes.suggsIframe.contentDocument.body.innerHTML = content;
   },
 
-  _renderPreview : function CM__renderPreview(context) {
-    var wasPreviewShown = false;
+  _renderPreview: function CM__renderPreview(context) {
+    var hindex = this.__hilitedIndex;
+    if (hindex === this.__lastHilitedIndex) return;
 
-    try {
-      var activeSugg = this.__activeQuery.suggestionList[this.__hilitedSuggestion];
+    var activeSugg = this.hilitedSuggestion;
+    if (!activeSugg) return;
+    this.__lastHilitedIndex = hindex;
 
-      if (activeSugg) {
-        var self = this;
-        var previewUrl = activeSugg.previewUrl;
-
-        this._previewer.queuePreview(
-          previewUrl,
-          activeSugg.previewDelay,
-          function(pblock) { activeSugg.preview(context, pblock); }
-        );
-
-        wasPreviewShown = true;
-      }
-    } catch (e) {
-      this.__msgService.displayMessage(
-        {text: ("An exception occurred while previewing the command '" +
-                this.__lastInput + "'."),
-         exception: e}
-        );
-    }
-    return wasPreviewShown;
+    var self = this;
+    this.__previewer.queuePreview(
+      activeSugg.previewUrl,
+      activeSugg.previewDelay,
+      function queuedPreview(pblock) {
+        try { activeSugg.preview(context, pblock); }
+        catch (e) {
+          let verb = activeSugg._verb;
+          self.__msgService.displayMessage({
+            text: ('An exception occurred while previewing the command "' +
+                   (verb.cmd || verb).name + '".'),
+            exception: e,
+          });
+        }
+      });
   },
 
-  _previewAndSuggest : function CM__previewAndSuggest(context) {
+  _renderAll: function CM__renderAll(context) {
     this._renderSuggestions();
-
-    return this._renderPreview(context);
+    this._renderPreview(context);
   },
 
-  activateAccessKey: function CM_activateAccessKey(number) {
-    this._previewer.activateAccessKey(number);
+  reset: function CM_reset() {
+    var query = this.__activeQuery;
+    if (query && !query.finished) query.cancel();
+    this.__hilitedIndex = 0;
+    this.__lastInput = "";
+    this.__lastHilitedIndex = -1;
   },
 
-  reset : function CM_reset() {
-    // TODO: I think?
-    if (this.__activeQuery)
-      this.__activeQuery.cancel();
-  },
-
-  updateInput : function CM_updateInput(input, context, asyncSuggestionCb) {
+  updateInput: function CM_updateInput(input, context, asyncSuggestionCb) {
+    this.reset();
     this.__lastInput = input;
-    this.__activeQuery = this.__nlParser.newQuery(input, context, MAX_SUGGESTIONS);
-    this.__activeQuery.onResults = asyncSuggestionCb;
-    this.__hilitedSuggestion = 0;
-    var previewState = "no-suggestions";
-    if (this.__activeQuery.suggestionList.length > 0 &&
-        this._previewAndSuggest(context))
-      previewState = "with-suggestions";
-    this.setPreviewState(previewState);
+
+    var query = this.__activeQuery =
+      this.__nlParser.newQuery(input, context, this.maxSuggestions, true);
+    query.onResults = asyncSuggestionCb || this.__lastAsyncSuggestionCb;
+
+    if (asyncSuggestionCb)
+      this.__lastAsyncSuggestionCb = asyncSuggestionCb;
+
+    query.run();
   },
 
-  onSuggestionsUpdated : function CM_onSuggestionsUpdated(input,
-                                                          context) {
-    // Called when we're notified of a newly incoming suggestion
-    // TODO: Huh?
-    // this.__nlParser.refreshSuggestionList(input);
-    this._previewAndSuggest(context);
+  getLastInput: function CM_getLastInput() {
+    return this.__lastInput;
   },
 
-  execute : function CM_execute(context) {
-    let suggestionList = this.__activeQuery.suggestionList;
-    var parsedSentence = suggestionList[this.__hilitedSuggestion];
-    if (!parsedSentence)
-      this.__msgService.displayMessage("No command called " +
-                                       this.__lastInput + ".");
+  onSuggestionsUpdated: function CM_onSuggestionsUpdated(input, context) {
+    if (input !== this.__lastInput) return;
+
+    var {suggestionList} = this.__activeQuery;
+    Utils.dump("rendering", suggestionList.length, "suggestions");
+
+    this.setPreviewState(this.__activeQuery.finished
+                         ? (suggestionList.length > 0
+                            ? "with-suggestions"
+                            : "no-suggestions")
+                         : "computing-suggestions");
+    this._renderAll(context);
+  },
+
+  execute: function CM_execute(context) {
+    var activeSugg = this.hilitedSuggestion;
+    if (!activeSugg)
+      this.__msgService.displayMessage('No command called "' +
+                                       this.__lastInput + '".');
     else
       try {
-	this.__nlParser.strengthenMemory(this.__lastInput, parsedSentence);
-        parsedSentence.execute(context);
+        this.__nlParser.strengthenMemory(this.__lastInput, activeSugg);
+        activeSugg.execute(context);
       } catch (e) {
-        this.__msgService.displayMessage(
-          {text: ("An exception occurred while running the command '" +
-                  this.__lastInput + "'."),
-           exception: e}
-        );
+        let verb = activeSugg._verb;
+        this.__msgService.displayMessage({
+          text: ('An exception occurred while running the command "' +
+                 (verb.cmd || verb).name + '".'),
+          exception: e,
+        });
       }
   },
 
   hasSuggestions: function CM_hasSuggestions() {
-    return (this.__activeQuery && this.__activeQuery.suggestionList.length > 0);
+    return !!(this.__activeQuery || 0).hasResults;
   },
 
   getSuggestionListNoInput: function CM_getSuggListNoInput(context,
-                                                           asyncSuggestionCb) {
-    let noInputQuery = this.__nlParser.newQuery("", context, MAX_SUGGESTIONS);
-    noInputQuery.onResults = asyncSuggestionCb;
-    return noInputQuery.suggestionList;
+                                                           asyncSuggestionCb,
+                                                           noAsyncUpdates){
+    let noInputQuery = this.__nlParser.newQuery("", context, 20);
+    noInputQuery.onResults = function onResultsNoInput() {
+      if (noAsyncUpdates || noInputQuery.finished)
+        asyncSuggestionCb(noInputQuery.suggestionList);
+    };
   },
 
-  getHilitedSuggestionText : function CM_getHilitedSuggestionText(context) {
-    if(!this.hasSuggestions())
-      return null;
-
-    var selObj = this.__nlParser.getSelectionObject(context);
-    var suggText = this.__activeQuery.suggestionList[this.__hilitedSuggestion]
-                                  .getCompletionText(selObj);
-    this.updateInput(suggText,
-                     context);
-
-    return suggText;
+  getHilitedSuggestionText: function CM_getHilitedSuggestionText() {
+    var sugg = this.hilitedSuggestion;
+    return sugg ? sugg.completionText : "";
   },
 
-  makeCommandSuggester : function CM_makeCommandSuggester() {
+  getHilitedSuggestionDisplayName: function CM_getHilitedSuggDisplayName() {
+    var sugg = this.hilitedSuggestion;
+    return sugg ? sugg.displayHtml : "";
+  },
+
+  makeCommandSuggester: function CM_makeCommandSuggester() {
     var self = this;
-
-    function getAvailableCommands(context) {
+    return function getAvailableCommands(context, popupCb) {
       self.refresh();
-      var suggestions = self.getSuggestionListNoInput( context );
+      self.getSuggestionListNoInput(context, popupCb);
+    };
+  },
 
-      var retVal = {};
-      for each (let parsedSentence in suggestions) {
-        let sentenceClosure = parsedSentence;
-        let titleCasedName = parsedSentence._verb._name;
-        titleCasedName = (titleCasedName[0].toUpperCase() +
-                          titleCasedName.slice(1));
-        retVal[titleCasedName] = function execute() {
-	  sentenceClosure.execute(context);
-        };
-
-        let suggestedCommand = self.__cmdSource.getCommand(
-          parsedSentence._verb._name
-        );
-        if(suggestedCommand.icon)
-          retVal[titleCasedName].icon = suggestedCommand.icon;
+  get maxSuggestions() CommandManager.maxSuggestions,
+  get previewBrowser() this.__previewer,
+  get hilitedSuggestion() (
+    this.__activeQuery &&
+    this.__activeQuery.suggestionList[this.__hilitedIndex]),
+  
+  getCommandsByServiceDomain: function() {
+    if (this.__commandsByServiceDomain)
+      return this.__commandsByServiceDomain;
+    let commands = this.__cmdSource.getAllCommands();
+    this.__commandsByServiceDomain = {};
+    for each (let cmd in commands) {
+      if (cmd.serviceDomain) {
+        if (!(cmd.serviceDomain in this.__commandsByServiceDomain))
+          this.__commandsByServiceDomain[cmd.serviceDomain] = [];
+        this.__commandsByServiceDomain[cmd.serviceDomain].push(
+          {name:cmd.name, names:cmd.names, id: cmd.id});
       }
-      return retVal;
     }
-
-    return getAvailableCommands;
+    return this.__commandsByServiceDomain;
   }
 };

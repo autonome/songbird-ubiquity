@@ -24,6 +24,8 @@
  *   Maria Emerson <memerson@mozilla.com>
  *   Blair McBride <unfocused@gmail.com>
  *   Abimanyu Raja <abimanyuraja@gmail.com>
+ *   Michael Yoshitaka Erlewine <mitcho@mitcho.com>
+ *   Satoshi Murakami <murky.satyr@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -39,132 +41,225 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+// = NounUtils =
+//
+// A library of noun related utilities.
+// [[#modules/cmdutils.js|CmdUtils]] inherits them all.
+
 var EXPORTED_SYMBOLS = ["NounUtils"];
+
+/* Make a namespace object called NounUtils, to export,
+ * which contains each function in this file.*/
+var NounUtils = ([f for each (f in this) if (typeof f === "function")]
+                 .reduce(function(o, f)(o[f.name] = f, o), {}));
 
 Components.utils.import("resource://ubiquity/modules/utils.js");
 
-var NounUtils = {};
+// === {{{ NounUtils.NounType() }}} ===
+//
+// Constructor of a noun type that accepts a specific set of inputs.
+// See {{{NounType._from*}}} methods for details
+// (but do not use them directly).
+//
+// {{{label}}} is an optional string specifying default label of the nountype.
+//
+// {{{expected}}} is the instance of {{{Array}}}, {{{Object}}} or {{{RegExp}}}.
+// The array can optionally be a space-separeted string.
+//
+// {{{defaults}}} is an optional array or space-separated string
+// of default inputs.
 
-NounUtils.NounType = function(name, expectedWords, defaultWord) {
-  this._init(name, expectedWords, defaultWord);
-};
+function NounType(label, expected, defaults) {
+  if (!(this instanceof NounType))
+    return new NounType(label, expected, defaults);
 
-NounUtils.NounType.prototype = {
-  /* A NounType that accepts a finite list of specific words as the only valid
-   * values.  Instantiate it with an array giving all allowed words.
-   */
-  _init: function(name, expectedWords, defaultWord) {
-    this._name = name;
-    this._wordList = expectedWords; // an array
-    if(typeof defaultWord == "string") {
-      this.default = function() {
-        return NounUtils.makeSugg(defaultWord);
-      };
-    }
-  },
-  suggest: function(text) {
-    // returns array of suggestions where each suggestion is object
-    // with .text and .html properties.
-    if (typeof text != "string") {
-      // Input undefined or not a string
-      return [];
-    }
+  if (typeof label !== "string")
+    [label, expected, defaults] = ["?", label, expected];
 
-    text = text.toLowerCase();
+  if (typeof expected.suggest === "function") return expected;
 
-    var possibleWords = [];
-    if(typeof this._wordList == "function") {
-      possibleWords = this._wordList();
-    } else {
-      possibleWords = this._wordList;
-    }
+  function maybe_qw(o) typeof o === "string" ? o.match(/\S+/g) || [] : o;
+  expected = maybe_qw(expected);
+  defaults = maybe_qw(defaults);
 
-    var suggestions = [];
-    possibleWords.forEach(function(word) {
-      // Do the match in a non-case sensitive way
-      if ( word.toLowerCase().indexOf(text) > -1 ) {
-      	suggestions.push( NounUtils.makeSugg(word) );//xxx
-      	// TODO if text input is multiple words, search for each of them
-      	// separately within the expected word.
-      }
-    });
-    return suggestions;
+  var maker = NounType["_from" + Utils.classOf(expected)];
+  for (let [k, v] in Iterator(maker(expected))) this[k] = v;
+  this.suggest = maker.suggest;
+  this.label = label;
+  this.noExternalCalls = true;
+  this.cacheTime = -1;
+  if (this.id) this.id += Utils.computeCryptoHash("MD5", (uneval(expected) +
+                                                          uneval(defaults)));
+  if (defaults) {
+    // [[a], [b, c], ...] => [a].concat([b, c], ...) => [a, b, c, ...]
+    this._defaults =
+      Array.concat.apply(0, [this.suggest(d) for each (d in defaults)]);
+    this.default = NounType.default;
   }
+}
+NounType.default = function default() this._defaults;
+
+// ** {{{ NounUtils.NounType._fromArray() }}} **
+//
+// Creates a noun type that accepts a finite list of specific words
+// as the only valid inputs. Those words will be suggested as {{{text}}}s.
+//
+// {{{words}}} is the array of words.
+
+NounType._fromArray = function NT_Array(words)({
+  id: "#na_",
+  name: words.slice(0, 2) + (words.length > 2 ? ",..." : ""),
+  _list: [makeSugg(w) for each (w in words)],
+});
+
+// ** {{{ NounUtils.NounType._fromObject() }}} **
+//
+// Creates a noun type from the given key:value pairs, the key being
+// the {{{text}}} attribute of its suggest and the value {{{data}}}.
+//
+// {{{dict}}} is the object of text:data pairs.
+
+NounType._fromObject = function NT_Object(dict) {
+  var list = [makeSugg(key, null, dict[key]) for (key in dict)];
+  return {
+    name: ([s.text for each (s in list.slice(0, 2))] +
+           (list.length > 2 ? ",..." : "")),
+    _list: list,
+  };
 };
 
-NounUtils.makeSugg = function( text, html, data, selectionIndices ) {
-  if (typeof text != "string" && typeof html != "string" && !data) {
-    // all inputs empty!  There is no suggestion to be made.
-    return null;
-  }
-  // make the basic object:
-  var suggestion = {text: text, html: html, data:data};
-  // Fill in missing fields however we can:
-  if (suggestion.data && !suggestion.text)
-    suggestion.text = suggestion.data.toString();
-  if (suggestion.text && !suggestion.html)
-    suggestion.html = Utils.escapeHtml(suggestion.text);
-  if(suggestion.html && !suggestion.text)
-    // TODO: Any easy way to strip the text out of the HTML here? We
-    // don't have immediate access to any HTML DOM objects...
-    suggestion.text = suggestion.html;
-  // Create a summary of the text:
+NounType._fromArray.suggest = NounType._fromObject.suggest = (
+  function NT_suggest(text) grepSuggs(text, this._list));
 
-  var snippetLength = 35;
-  var summary;
-  if( text && text.length > snippetLength )
-    summary = text.substring(0, snippetLength-1) + "\u2026";
-  else
-    summary = suggestion.text;
-
-  /* If the input comes all or in part from a text selection,
-   * we'll stick some html tags into the summary so that the part
-   * that comes from the text selection can be visually marked in
-   * the suggestion list.
-   */
-  if (selectionIndices) {
-    var pre = summary.slice(0, selectionIndices[0]);
-    var middle = summary.slice(selectionIndices[0],
-                               selectionIndices[1]);
-    var post = summary.slice(selectionIndices[1]);
-    summary = (Utils.escapeHtml(pre) +
-               "<span class='selection'>" +
-               Utils.escapeHtml(middle) +
-               "</span>" +
-               Utils.escapeHtml(post));
-  } else
-    summary = Utils.escapeHtml(summary);
-
-  suggestion.summary = summary;
-
-  return suggestion;
-};
-
-// ** {{{ NounUtils.nounTypeFromRegExp() }}} **
+// ** {{{ NounUtils.NounType._fromRegExp() }}} **
 //
 // Creates a noun type from the given regular expression object
 // and returns it. The {{{data}}} attribute of the noun type is
 // the {{{match}}} object resulting from the regular expression
 // match.
+//
+// {{{regexp}}} is the RegExp object that checks inputs.
 
-NounUtils.nounTypeFromRegExp = function nounTypeFromRegExp(regexp) {
-  var rankLast = false;
-  if (regexp.source == ".*")
-    rankLast = true;
-  var newNounType = {
-    // This will show up if the noun type is the target of a modifier.
-    _name: "text",
-    rankLast: rankLast,
-    suggest: function(text, html, callback, selectionIndices) {
-      var match = text.match(regexp);
-      if (match) {
-        var suggestion = NounUtils.makeSugg(text, html, match,
-                                            selectionIndices);
-        return [suggestion];
-      } else
-        return [];
-    }
-  };
-
-  return newNounType;
+NounType._fromRegExp = function NT_RegExp(regexp) ({
+  id: "#nr_",
+  name: regexp + "",
+  rankLast: regexp.test(""),
+  _regexp: regexp,
+});
+NounType._fromRegExp.suggest = function NT_RE_suggest(text, html, cb,
+                                                      selectionIndices) {
+  var match = text.match(this._regexp);
+  if (!match) return [];
+  // ToDo: how to score global match
+  var score = "index" in match ? matchScore(match) : 1;
+  return [makeSugg(text, html, match, score, selectionIndices)];
 };
+
+// === {{{ NounUtils.matchScore() }}} ===
+//
+// Calculates the score for use in suggestions from
+// a result array ({{{match}}}) of {{{RegExp#exec}}}.
+
+const SCORE_BASE = 0.3;
+const SCORE_LENGTH = 0.4;
+const SCORE_INDEX = 1 - SCORE_BASE - SCORE_LENGTH;
+
+function matchScore(match) {
+  var inLen = match.input.length;
+  return (SCORE_BASE
+          + SCORE_LENGTH * Math.pow(match[0].length / inLen, 0.5)
+          + SCORE_INDEX  * (1 - match.index / inLen));
+}
+
+// === {{{ NounUtils.makeSugg() }}} ===
+//
+// Creates a suggestion object, filling in {{{text}}} and {{{html}}} if missing
+// and constructing {{{summary}}} from {{{text}}} and {{{selectionIndices}}}.
+// At least one of {{{text}}}, {{{html}}} or {{{data}}} is required.
+//
+// {{{text}}} can be any string.
+//
+// {{{html}}} must be a valid HTML string.
+//
+// {{{data}}} can be any value.
+//
+// {{{score = 1}}}
+// is an optional float number representing the score of the suggestion.
+//
+// {{{selectionIndices}}} is an optional array containing the start and end
+// indices of selection within {{{text}}}.
+
+function makeSugg(text, html, data, score, selectionIndices) {
+  if (text == null && html == null && arguments.length < 3)
+    // all inputs empty!  There is no suggestion to be made.
+    return null;
+
+  // Shift the argument if appropriate:
+  if (typeof score === "object") {
+    selectionIndices = score;
+    score = null;
+  }
+
+  // Fill in missing fields however we can:
+  if (text != null) text += "";
+  if (html != null) html += "";
+  if (!text && data != null)
+    text = data.toString();
+  if (!html && text >= "")
+    html = Utils.escapeHtml(text);
+  if (!text && html >= "")
+    text = html.replace(/<[^>]*>/g, "");
+
+  // Create a summary of the text:
+  var snippetLength = 35;
+  var summary = (text.length > snippetLength
+                 ? text.slice(0, snippetLength-1) + "\u2026"
+                 : text);
+
+  // If the input comes all or in part from a text selection,
+  // we'll stick some html tags into the summary so that the part
+  // that comes from the text selection can be visually marked in
+  // the suggestion list.
+  var [start, end] = selectionIndices || [0, 0];
+  summary = (
+    start < end
+    ? (Utils.escapeHtml(summary.slice(0, start)) +
+       "<span class='selection'>" +
+       Utils.escapeHtml(summary.slice(start, end)) +
+       "</span>" +
+       Utils.escapeHtml(summary.slice(end)))
+    : Utils.escapeHtml(summary));
+
+  return {
+    text: text, html: html, data: data,
+    summary: summary, score: score || 1};
+}
+
+// === {{{ NounUtils.grepSuggs() }}} ===
+//
+// A helper function to grep a list of suggestion objects by user input.
+// Returns an array of filtered suggetions sorted/scored by matched indices.
+//
+// {{{input}}} is a string that filters the list.
+//
+// {{{suggs}}} is an array or dictionary of suggestion objects.
+//
+// {{{key = "text"}}} is an optional string to specify the target property
+// to match with.
+
+function grepSuggs(input, suggs, key) {
+  if (!input) return [];
+  if (key == null) key = "text";
+  try { var re = RegExp(input, "i") }
+  catch (e if e instanceof SyntaxError) {
+    re = RegExp(input.replace(/\W/g, "\\$&"), "i");
+  }
+  var results = [], count = suggs.__count__, i = -1;
+  for each (let sugg in suggs) {
+    let match = re(sugg[key]);
+    if (!match) continue;
+    sugg.score = matchScore(match) * (sugg.score || 1);
+    results[++i + match.index * count] = sugg;
+  }
+  return results.filter(Boolean);
+}

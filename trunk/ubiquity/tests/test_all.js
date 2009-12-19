@@ -40,7 +40,6 @@ Components.utils.import("resource://ubiquity/modules/nounutils.js");
 Components.utils.import("resource://ubiquity/modules/sandboxfactory.js");
 Components.utils.import("resource://ubiquity/modules/codesource.js");
 Components.utils.import("resource://ubiquity/modules/parser/parser.js");
-Components.utils.import("resource://ubiquity/modules/parser/locale_en.js");
 Components.utils.import("resource://ubiquity/modules/feedmanager.js");
 Components.utils.import("resource://ubiquity/modules/cmdmanager.js");
 Components.utils.import("resource://ubiquity/modules/localeutils.js");
@@ -51,9 +50,12 @@ Components.utils.import("resource://ubiquity/tests/test_eventhub.js");
 Components.utils.import("resource://ubiquity/tests/test_suggestion_memory.js");
 Components.utils.import("resource://ubiquity/tests/test_annotation_memory.js");
 Components.utils.import("resource://ubiquity/tests/test_hiddenbrowser.js");
-Components.utils.import("resource://ubiquity/tests/test_parser.js");
+Components.utils.import("resource://ubiquity/tests/test_parser1.js");
+Components.utils.import("resource://ubiquity/tests/test_parser2.js");
 Components.utils.import("resource://ubiquity/tests/test_tag_command.js");
 Components.utils.import("resource://ubiquity/tests/testing_stubs.js");
+
+var NLParser = NLParserMaker(1);
 
 var globalObj = this;
 
@@ -157,9 +159,9 @@ function testFeedManagerWorks() {
 
       feedInfo.refresh = function refresh() {
         this.commandNames = [];
-        this.nounTypes = [];
         this.commands = [];
         this.pageLoadFuncs = [];
+        this.ubiquityLoadFuncs = [];
       };
 
       feedInfo.__proto__ = baseFeedInfo;
@@ -231,20 +233,21 @@ function testCmdManagerExecutesTwoCmds() {
       cmd_two: {execute:function() {twoWasCalled = true;}}
     });
 
-  var cmdMan = makeCommandManager.call(this, fakeSource, mockMsgService,
-                                       makeTestParser());
+  makeCommandManager.call(this, fakeSource, mockMsgService,
+                          makeTestParser(), onCM);
+  function onCM(cmdMan){
+    var fakeContext = {focusedElement: null,
+                       focusedWindow: null};
 
-  var fakeContext = {focusedElement: null,
-                     focusedWindow: null};
-
-  cmdMan.updateInput("cmd_one", fakeContext);
-  this.assert(cmdMan.__activeQuery.suggestionList.length == 1, "should have 1");
-  cmdMan.execute(fakeContext);
-  cmdMan.updateInput("cmd_two", fakeContext);
-  this.assert(cmdMan.__activeQuery.suggestionList.length == 1, "should have 1");
-  cmdMan.execute(fakeContext);
-  this.assert(oneWasCalled, "cmd_one must be called.");
-  this.assert(twoWasCalled, "cmd_two must be called.");
+    cmdMan.updateInput("cmd_one", fakeContext);
+    this.assert(cmdMan.__activeQuery.suggestionList.length == 1, "should have 1");
+    cmdMan.execute(fakeContext);
+    cmdMan.updateInput("cmd_two", fakeContext);
+    this.assert(cmdMan.__activeQuery.suggestionList.length == 1, "should have 1");
+    cmdMan.execute(fakeContext);
+    this.assert(oneWasCalled, "cmd_one must be called.");
+    this.assert(twoWasCalled, "cmd_two must be called.");
+  }
 }
 
 function testCmdManagerExecutesCmd() {
@@ -261,11 +264,13 @@ function testCmdManagerExecutesCmd() {
   var fakeContext = {focusedElement: null,
                      focusedWindow: null};
 
-  var cmdMan = makeCommandManager.call(this, fakeSource, mockMsgService,
-                                       makeTestParser());
-  cmdMan.updateInput("existentcommand", fakeContext);
-  cmdMan.execute(fakeContext);
-  this.assert(wasCalled, "command.execute() must be called.");
+  makeCommandManager.call(this, fakeSource, mockMsgService,
+                          makeTestParser(), onCM);
+  function onCM(cmdMan) {
+    cmdMan.updateInput("existentcommand", fakeContext);
+    cmdMan.execute(fakeContext);
+    this.assert(wasCalled, "command.execute() must be called.");
+  }
 }
 
 function testCmdManagerCatchesExceptionsInCmds() {
@@ -281,16 +286,17 @@ function testCmdManagerCatchesExceptionsInCmds() {
   var fakeContext = {focusedElement: null,
                      focusedWindow: null};
 
-  var cmdMan = makeCommandManager.call(this, fakeSource, mockMsgService,
-                                       makeTestParser());
-
-  cmdMan.updateInput("existentcommand", fakeContext);
-  cmdMan.execute(fakeContext);
-  this.assert(
-    (mockMsgService.lastMsg.text.indexOf("exception occurred") >= 0 &&
-     mockMsgService.lastMsg.exception),
-    "Command manager must log exception."
-  );
+  makeCommandManager.call(this, fakeSource, mockMsgService,
+                          makeTestParser(), onCM);
+  function onCM(cmdMan) {
+    cmdMan.updateInput("existentcommand", fakeContext);
+    cmdMan.execute(fakeContext);
+    this.assert(
+      (mockMsgService.lastMsg.text.indexOf("exception occurred") >= 0 &&
+       mockMsgService.lastMsg.exception),
+      "Command manager must log exception."
+      );
+  }
 }
 
 function testCmdManagerDisplaysNoCmdError() {
@@ -301,13 +307,14 @@ function testCmdManagerDisplaysNoCmdError() {
   var fakeContext = {focusedElement: null,
                      focusedWindow: null};
 
-  var cmdMan = makeCommandManager.call(this, fakeSource, mockMsgService,
-                                       makeTestParser());
-
-  cmdMan.updateInput("nonexistentcommand", fakeContext);
-  cmdMan.execute(fakeContext);
-  this.assertIsDefined(mockMsgService.lastMsg,
-                       "Command manager must display a message.");
+  makeCommandManager.call(this, fakeSource, mockMsgService,
+                          makeTestParser(), onCM);
+  function onCM(cmdMan) {
+    cmdMan.updateInput("nonexistentcommand", fakeContext);
+    cmdMan.execute(fakeContext);
+    this.assertIsDefined(mockMsgService.lastMsg,
+                         "Command manager must display a message.");
+  }
 }
 
 function testIterableCollectionWorks() {
@@ -329,6 +336,19 @@ function testIterableCollectionWorks() {
 function testUtilsTrim() {
   // Taken from http://www.somacon.com/p355.php.
   this.assert(Utils.trim("\n  hello   ") == "hello");
+}
+
+function testUtilsSortBy() {
+  var strArray = ["abc", "d", "ef", "ghij", "klm", "nop", "qrstuvw", "xyz"];
+  this.assertEquals(strArray.slice().sort() + "",
+                    Utils.sortBy(strArray.slice(), String) + "");
+  this.assertEquals(
+    strArray.slice().sort(function(a, b) a.length - b.length) + "",
+    Utils.sortBy(strArray.slice(), "length") + "");
+  // (-2|-1|0|1|2) x 99
+  var numArray = [(Math.random() * 5 | 0) - 2 for each(i in Array(99) + 0)];
+  this.assertEquals(numArray.slice().sort(function(a, b) b - a) + '',
+                    Utils.sortBy(numArray, function(x) -x) + '');
 }
 
 function testUtilsComputeCryptoHash() {
@@ -358,7 +378,7 @@ function testUtilsParamsToString() {
   data = {
     multiple: ["one", "two", "three"]
   };
-  expected = "?multiple%5B%5D=one&multiple%5B%5D=two&multiple%5B%5D=three";
+  expected = "?multiple=one&multiple=two&multiple=three";
   this.assert(Utils.paramsToString(data) == expected);
 
   data = {
@@ -369,6 +389,7 @@ function testUtilsParamsToString() {
   };
   expected = "?obj=hello_world";
   this.assert(Utils.paramsToString(data) == expected);
+  this.assert(Utils.paramsToString(data, "") == expected.slice(1));
 }
 
 function testUtilsIsArray() {
@@ -455,18 +476,26 @@ function testUtilsSetTimeoutWorks() {
   foo = "foo";
 }
 
-function getLocalFileAsUtf8(url) {
-  var req = Components.classes["@mozilla.org/xmlextras/xmlhttprequest;1"]
-                      .createInstance(Components.interfaces.nsIXMLHttpRequest);
-  req.open('GET', url, false);
-  req.overrideMimeType("text/plain; charset=utf-8");
-  req.send(null);
-  return req.responseText;
-}
+function testNounType() {
+  var {NounType} = NounUtils;
 
-// TODO: This is a horrible workaround; modifying the tests to use
-// localeutils.js makes them unreadable and hard to maintain, but there
-// doesn't seem to be any way of loading utf-8 JS from xpcshell.
-eval(getLocalFileAsUtf8("resource://ubiquity/tests/test_locale_jp.js"));
+  var nounWords = new NounType("words", ["foo", "bar", "buz"]);
+  this.assertEquals(nounWords.label, "words");
+  this.assertEquals([s.text for each (s in nounWords.suggest("b"))] + "",
+                    "bar,buz");
+  this.assertEquals(nounWords.id, NounType(["foo", "bar", "buz"]).id);
+
+  var nounRegex = NounType(/(.)_(.)/, ["foo_bar"]);
+  this.assertEquals(nounRegex.default().pop().data + "",
+                    "o_b,o,b");
+
+  var nounDict = NounType({
+    foooo: 123,
+    barrr: 456,
+    buzzz: 789,
+  }, "o r z");
+  this.assertEquals([s.data for each (s in nounDict.default())] + "",
+                    "123,456,789");
+}
 
 exportTests(this);

@@ -21,6 +21,7 @@
  *   Atul Varma <atul@mozilla.com>
  *   Jono DiCarlo <jdicarlo@mozilla.com>
  *   Blair McBride <unfocused@gmail.com>
+ *   Michael Yoshitaka Erlewine <mitcho@mitcho.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -36,39 +37,42 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-let EXPORTED_SYMBOLS = ["DefaultFeedPlugin"];
+var EXPORTED_SYMBOLS = ["DefaultFeedPlugin"];
 
-Components.utils.import("resource://ubiquity/modules/utils.js");
-Components.utils.import("resource://ubiquity/modules/codesource.js");
-Components.utils.import("resource://ubiquity/modules/sandboxfactory.js");
-Components.utils.import("resource://ubiquity/modules/collection.js");
-Components.utils.import("resource://ubiquity/modules/feed_plugin_utils.js");
+const Cc = Components.classes;
+const Ci = Components.interfaces;
+const Cu = Components.utils;
 
-const CONFIRM_URL = "chrome://ubiquity/content/confirm-add-command.html";
+Cu.import("resource://ubiquity/modules/utils.js");
+Cu.import("resource://ubiquity/modules/codesource.js");
+Cu.import("resource://ubiquity/modules/sandboxfactory.js");
+Cu.import("resource://ubiquity/modules/collection.js");
+Cu.import("resource://ubiquity/modules/feed_plugin_utils.js");
+
+const CONFIRM_URL = "chrome://ubiquity/content/confirm-add-command.xhtml";
 const DEFAULT_FEED_TYPE = "commands";
 const TRUSTED_DOMAINS_PREF = "extensions.ubiquity.trustedDomains";
 const REMOTE_URI_TIMEOUT_PREF = "extensions.ubiquity.remoteUriTimeout";
 
 function DefaultFeedPlugin(feedManager, messageService, webJsm,
-                           languageCode, baseUri) {
+                           languageCode, baseUri, parserVersion) {
   this.type = DEFAULT_FEED_TYPE;
 
-  let Application = Components.classes["@mozilla.org/fuel/application;1"]
-                    .getService(Components.interfaces.fuelIApplication);
+  let {prefs} = Utils.Application;
 
-  let builtins = makeBuiltins(languageCode, baseUri);
+  let builtins = makeBuiltins(languageCode, baseUri, parserVersion);
   let builtinGlobalsMaker = makeBuiltinGlobalsMaker(messageService,
                                                     webJsm);
   let sandboxFactory = new SandboxFactory(builtinGlobalsMaker);
 
-  builtins.feeds.forEach(
-    function addFeed(url) {
-      feedManager.addSubscribedFeed({url: url,
-                                     sourceUrl: url,
-                                     canAutoUpdate: true,
-                                     isBuiltIn: true});
-    }
-  );
+  for (let [title, url] in Iterator(builtins.feeds))
+    feedManager.addSubscribedFeed({
+      url: url,
+      sourceUrl: url,
+      canAutoUpdate: true,
+      isBuiltIn: true,
+      title: title,
+    });
 
   this.installDefaults = function DFP_installDefaults(baseUri,
                                                       baseLocalUri,
@@ -112,7 +116,7 @@ function DefaultFeedPlugin(feedManager, messageService, webJsm,
       if (url.scheme != "https")
         return false;
 
-      var domains = Application.prefs.getValue(TRUSTED_DOMAINS_PREF, "");
+      var domains = prefs.getValue(TRUSTED_DOMAINS_PREF, "");
       domains = domains.split(",");
 
       for (var i = 0; i < domains.length; i++) {
@@ -143,7 +147,7 @@ function DefaultFeedPlugin(feedManager, messageService, webJsm,
   };
 
   this.makeFeed = function DFP_makeFeed(baseFeedInfo, hub) {
-    var timeout = Application.prefs.getValue(REMOTE_URI_TIMEOUT_PREF, 10);
+    var timeout = prefs.getValue(REMOTE_URI_TIMEOUT_PREF, 10);
     return new DFPFeed(baseFeedInfo, hub, messageService, sandboxFactory,
                        builtins.headers, builtins.footers,
                        webJsm.jQuery, timeout);
@@ -152,36 +156,66 @@ function DefaultFeedPlugin(feedManager, messageService, webJsm,
   feedManager.registerPlugin(this);
 }
 
-const CMD_PREFIX = "cmd_";
-const NOUN_PREFIX = "noun_";
+DefaultFeedPlugin.makeCmdForObj = makeCmdForObj;
 
-function makeCmdForObj(sandbox, objName) {
-  var cmdName = objName.substr(CMD_PREFIX.length);
-  cmdName = cmdName.replace(/_/g, "-");
-  var cmdFunc = sandbox[objName];
+function makeCmdForObj(sandbox, commandObject, feedUri) {
+  // referenceName is set by CreateCommand, so this command must have
+  // bypassed CreateCommand. Let's set the referenceName here.
+  if (!("referenceName" in commandObject))
+    commandObject.referenceName = commandObject.name;
+
+  var serviceDomain = null;
+  if (commandObject.url) {
+    var match = commandObject.url.match(/https?:\/\/([\w.]+)/)
+    if (match)
+      serviceDomain = match[1];
+  }
+  
+  if (!serviceDomain) {
+    var source = commandObject.execute.toString()
+               + (commandObject.preview.toString() || '');
+    var match = source.match(/https?:\/\/([\w.]+)/);
+    if (match)
+      serviceDomain = match[1];
+  }
+  // TODO: also check for serviceDomain in Utils.getCookie type code
 
   var cmd = {
-    name : cmdName,
-    icon : cmdFunc.icon,
-    execute : function CS_execute(context, directObject, modifiers) {
+    __proto__: commandObject,
+    toString: function CS_toString() {
+      return "[object UbiquityCommand " + this.name + "]";
+    },
+    id: feedUri.spec + "#" + commandObject.referenceName,
+    execute: function CS_execute(context) {
+      /* Any additional arguments passed in after context will be passed along
+       * as-is to the commandObject.execute() method.
+       */
       sandbox.context = context;
-      return cmdFunc(directObject, modifiers);
-    }
+      Cu.import("resource://ubiquity/modules/localization_utils.js");
+      LocalizationUtils.setLocalizationContext(feedUri,
+                                               commandObject.referenceName,
+                                               "execute");
+      return commandObject.execute.apply(cmd, Array.slice(arguments, 1));
+    },
+    feedUri: feedUri,
+    serviceDomain: commandObject.serviceDomain || serviceDomain
   };
 
-  if (cmdFunc.preview) {
-    cmd.preview = function CS_preview(context, directObject, modifiers,
-                                      previewBlock) {
+  if ("preview" in commandObject)
+    cmd.preview = function CS_preview(context) {
+      /* Any additional arguments passed in after context will be passed along
+       * as-is to the commandObject.preview() method.
+       */
       sandbox.context = context;
-      return cmdFunc.preview(previewBlock, directObject,
-                             modifiers);
+      Cu.import("resource://ubiquity/modules/localization_utils.js");
+      LocalizationUtils.setLocalizationContext(feedUri,
+                                               commandObject.referenceName,
+                                               "preview");
+      return commandObject.preview.apply(cmd, Array.slice(arguments, 1));
     };
-  }
-
-  cmd.__proto__ = cmdFunc;
 
   return finishCommand(cmd);
-};
+}
 
 function makeCodeSource(feedInfo, headerSources, footerSources,
                         timeoutInterval) {
@@ -214,28 +248,28 @@ function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
   if (LocalUriCodeSource.isValidUri(feedInfo.srcUri))
     this.canAutoUpdate = true;
 
-  let codeSource = makeCodeSource(feedInfo, headerSources, footerSources,
+  var codeSource = makeCodeSource(feedInfo, headerSources, footerSources,
                                   timeoutInterval);
-
+  var bin = makeBin(feedInfo);
   var codeCache = null;
   var sandbox = null;
-
-  let self = this;
+  var self = this;
 
   function reset() {
-    self.nounTypes = [];
-    self.commands = [];
+    self.commands = {};
     self.pageLoadFuncs = [];
+    self.ubiquityLoadFuncs = [];
   }
 
   reset();
 
   this.refresh = function refresh() {
-    let code = codeSource.getCode();
-    if (code != codeCache) {
+    var code = codeSource.getCode();
+    if (code !== codeCache) {
       reset();
       codeCache = code;
       sandbox = sandboxFactory.makeSandbox(codeSource);
+      sandbox.Bin = bin;
       try {
         sandboxFactory.evalInSandbox(code,
                                      sandbox,
@@ -247,17 +281,13 @@ function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
         );
       }
 
-      for (objName in sandbox) {
-        if (objName.indexOf(CMD_PREFIX) == 0) {
-          var cmd = makeCmdForObj(sandbox, objName);
-
-          this.commands[cmd.name] = cmd;
-        }
-        if (objName.indexOf(NOUN_PREFIX) == 0)
-          this.nounTypes.push(sandbox[objName]);
+      for each (let cmd in sandbox.commands) {
+        let newCmd = makeCmdForObj(sandbox, cmd, feedInfo.uri);
+        this.commands[newCmd.id] = newCmd;
       }
 
-      this.pageLoadFuncs = sandbox.pageLoadFuncs;
+      for each (let p in ["pageLoadFuncs", "ubiquityLoadFuncs"])
+        this[p] = sandbox[p];
 
       hub.notifyListeners("feed-change", feedInfo.uri);
     }
@@ -299,16 +329,14 @@ function DFPFeed(feedInfo, hub, messageService, sandboxFactory,
 }
 
 function makeBuiltinGlobalsMaker(msgService, webJsm) {
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
-
   webJsm.importScript("resource://ubiquity/scripts/jquery.js");
   webJsm.importScript("resource://ubiquity/scripts/jquery_setup.js");
   webJsm.importScript("resource://ubiquity/scripts/template.js");
+  webJsm.importScript("resource://ubiquity/scripts/date.js");
 
   var globalObjects = {};
 
-  function makeGlobals(codeSource) {
+  return function makeGlobals(codeSource) {
     var id = codeSource.id;
 
     if (!(id in globalObjects))
@@ -318,23 +346,30 @@ function makeBuiltinGlobalsMaker(msgService, webJsm) {
       XPathResult: webJsm.XPathResult,
       XMLHttpRequest: webJsm.XMLHttpRequest,
       jQuery: webJsm.jQuery,
+      $: webJsm.jQuery,
       Template: webJsm.TrimPath,
       Application: webJsm.Application,
+      Date: webJsm.Date,
       Components: Components,
       feed: {id: codeSource.id,
              dom: codeSource.dom},
+      commands: [],
       pageLoadFuncs: [],
+      ubiquityLoadFuncs: [],
       globals: globalObjects[id],
-      displayMessage: function() {
-        msgService.displayMessage.apply(msgService, arguments);
+      displayMessage: function displayMessage(msg, cmd) {
+        if (cmd) {
+          if (typeof msg === "string") msg = {text: msg};
+          msg.icon  = cmd.icon;
+          msg.title = cmd.name;
+        }
+        msgService.displayMessage(msg);
       }
     };
   }
-
-  return makeGlobals;
 }
 
-function makeBuiltins(languageCode, baseUri) {
+function makeBuiltins(languageCode, baseUri, parserVersion) {
   var basePartsUri = baseUri + "feed-parts/";
   var baseFeedsUri = baseUri + "builtin-feeds/";
   var baseScriptsUri = baseUri + "scripts/";
@@ -342,36 +377,43 @@ function makeBuiltins(languageCode, baseUri) {
   var headerCodeSources = [
     new LocalUriCodeSource(basePartsUri + "header/utils.js"),
     new LocalUriCodeSource(basePartsUri + "header/cmdutils.js"),
-    new LocalUriCodeSource(basePartsUri + "header/experimental_utils.js"),
-    new LocalUriCodeSource(basePartsUri + "header/deprecated.js")
+    new LocalUriCodeSource(basePartsUri + "header/localization_utils.js"),
+    //new LocalUriCodeSource(basePartsUri + "header/experimental_utils.js"),
   ];
-  var feeds = [
-    baseFeedsUri + "onstartup.js"
-  ];
+  var feeds = {};
   var footerCodeSources = [
     new LocalUriCodeSource(basePartsUri + "footer/final.js")
   ];
 
-  if (languageCode == "jp") {
-    headerCodeSources = headerCodeSources.concat([
-      new LocalUriCodeSource(basePartsUri + "header/jp/nountypes.js")
-    ]);
-    feeds = feeds.concat([
-      baseFeedsUri + "jp/builtincmds.js"
-    ]);
-  } else if (languageCode == "en") {
-    headerCodeSources = headerCodeSources.concat([
-      new LocalUriCodeSource(baseScriptsUri + "date.js"),
-      new LocalUriCodeSource(basePartsUri + "header/en/nountypes.js")
-    ]);
-    feeds = feeds.concat([
-      baseFeedsUri + "en/builtincmds.js"
-    ]);
-  }
+  // TODO: think of a better way to switch nountypes files for different languages
+  // and keep english as a default, etc.
+  // mitcho's guess: we should keep nountypes separate but verbs together... :/
+  headerCodeSources.push(
+    new LocalUriCodeSource(basePartsUri + "header/nountypes.js"));
+  feeds["Builtin Commands"] = baseFeedsUri + "builtincmds.js";
 
   return {
     feeds: feeds,
     headers: new IterableCollection(headerCodeSources),
     footers: new IterableCollection(footerCodeSources)
+  };
+}
+
+function makeBin(feedInfo) {
+  var bin = feedInfo.getBin();
+  return {
+    toString: function toString() "[object Bin]",
+    valueOf: function valueOf() bin.__count__,
+    __iterator__: function iter() Iterator(bin),
+    __noSuchMethod__: function pass(key, [val]) {
+      if (val === void 0) return bin[key];
+      if (val === null) {
+        var old = bin[key];
+        delete bin[key];
+      }
+      else bin[key] = val;
+      bin = feedInfo.setBin(bin);
+      return key in bin ? bin[key] : old;
+    },
   };
 }

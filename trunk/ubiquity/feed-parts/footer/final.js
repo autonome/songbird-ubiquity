@@ -39,34 +39,27 @@
 // necessary post-processing and other finalization on the
 // contents of the sandbox.
 
-(function()
-{
+(function() {
   function findFunctionsWithPrefix(prefix) {
-    var funcs = [];
-
-    for (name in this)
-      if (name.indexOf(prefix) == 0 && typeof(this[name]) == "function")
-        funcs.push(this[name]);
-
-    return funcs;
+    var re = RegExp("^" + prefix);
+    return [this[name]
+            for (name in this)
+            if (re.test(name) && typeof this[name] === "function")];
   }
+  const CMD_PREFIX = "cmd_";
+  for each (var func in findFunctionsWithPrefix(CMD_PREFIX))
+    CmdUtils.CreateCommand({
+      __proto__: func,
+      name: func.name.slice(CMD_PREFIX.length).replace(/_/g, " "),
+      execute: func,
+    });
+  for each (var func in findFunctionsWithPrefix("pageLoad_"))
+    pageLoadFuncs.push(func);
+  for each (var func in findFunctionsWithPrefix("ubiquityLoad_"))
+    ubiquityLoadFuncs.push(func);
 
-  // Configure all functions starting with "pageLoad_" to be called
-  // whenever a page is loaded.
-  var funcs = findFunctionsWithPrefix("pageLoad_");
-  for (i = 0; i < funcs.length; i++)
-    CmdUtils.onPageLoad(funcs[i]);
-
-  function callRunOnceFunctions(scopeObj, prefix) {
-    if (!scopeObj.hasRunOnce) {
-      scopeObj.hasRunOnce = true;
-      var funcs = findFunctionsWithPrefix(prefix);
-      for (var i = 0; i < funcs.length; i++)
-        funcs[i]();
-    }
+  if (!globals.hasRunOnce) {
+    globals.hasRunOnce = true;
+    for each (var func in findFunctionsWithPrefix("startup_")) func();
   }
-
-  // Configure all functions starting with "startup_" to be called on
-  // Firefox startup.
-  callRunOnceFunctions(globals, "startup_");
 })();

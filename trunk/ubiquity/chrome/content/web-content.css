@@ -3,19 +3,18 @@
  */
 
 body{
-	background: #FFF;
-	font-size:13px;
-	font-family: "Helvetica", Verdana, Arial, sans-serif;
-	max-width: 900px;
-	margin-left: auto;
-	margin-right: auto;	
-	margin-top: 0px;
-	color: #000;
+  background: #FFF;
+  font-size: 13px;
+  font-family: "Helvetica", Verdana, Arial, sans-serif;
+  max-width: 900px;
+  margin: 0px auto 8px auto;
+  padding: 0 4px;
+  color: #000;
 }
 
 #nav-container{
   margin-left: -40px;
-  float: left;  
+  float: left;
 }
 
 li {
@@ -30,23 +29,22 @@ li {
 
   margin:0px;
   padding:0pt;
-    
+
   float:left;
   height:45px;
-  text-align:left;  
+  text-align:left;
   list-style-image:none;
   list-style-position:outside;
   list-style-type:none;
-  width: 165px;
+  width: 144px;
 }
 
 #nav a{
-  margin: 5px;
+  padding: 5px;
   color: white;
   display: block;
-  width: auto;
   height: 100%;
-  text-decoration: none;  
+  text-decoration: none;
 }
 
 #nav li:hover{
@@ -64,19 +62,19 @@ li {
   float: left;
 }
 
+.col-four{
+  width: 370px;
+  float: left;
+}
+
 .col-five{
   width: 480px;
   margin-right: 20px;
   float: left;
 }
 
-.col-four{
-  width: 395px;
-  float: left;
-}
-
 .light{
-  color: #ccc;
+  color: #999;
   font-style: italic;
 }
 
@@ -113,51 +111,69 @@ h2{
   border-top: 1px solid black;
   font-variant: small-caps;
   color: black;
-  margin-top: 100px;
-  padding-top: 10px;
-  padding-bottom: 20px;
+  margin-top: 80px;
+  padding: 10px 0;
 }
 
 h2.top{
   margin: 0px;
 }
 
-em{
+/*
+ Removed <em> for the time being since I changed <i>'s to <em> in the html sources
+ which are also included into localizations, and mixing redundant tags is kind of ugly.
+ I suggest just using custom classes for specific highlights from now on. I'll later
+ tackle more more of the html and define new styles later. <em class="highlight"> for
+ green texting now. :)
+ - Lech
+*/
+
+.highlight {
   color: #66bb00;
   font-style: normal;
 }
 
 #sort-container {
-	padding: 10px;
+  padding: 10px;
 }
 
-#command-list .command, #skin-list .command{
+.command, #skin-list .command{
   margin: 15px;
   margin-bottom: 20px;
 }
 
-#command-list .command .name, #skin-list .command .name{
+.command .name, #skin-list .command .name{
   font-size: 15pt;
 }
-#skin-list .command .name{
-  cursor: pointer;
+
+.command.not-loaded .name {
+  color: #bbb;
+  text-decoration: line-through;
 }
 
-#command-list .command .homepage, #skin-list .command .homepage{
+.command .homepage, #skin-list .command .homepage{
 }
 
-#command-list .command .author, #skin-list .command .author{
+.command .author, #skin-list .command .author{
   font-size: 90%;
 }
 
-#command-list .command .description, #skin-list .command .description{
+.command .description, #skin-list .command .description{
   display: inline;
   font-size: 12pt;
   margin-left: 10px;
-  color:#BFBFBF;
+  color: #a7a7a7;
 }
-#command-list .synonyms{
+.command .synonyms{
   color: black;
+}
+
+#skin-list{
+  padding: 0;
+}
+
+#skin-list .name{
+  font-style: normal;
 }
 
 #skin-list .current-skin{
@@ -165,7 +181,7 @@ em{
   font-weight: 800;
 }
 
-#command-list .command .help{
+.command .help{
   margin-top: 5px;
   color: #777;
 }
@@ -186,6 +202,10 @@ a:hover {
   text-decoration: underline;
 }
 
+a[onclick] {
+  cursor: pointer;
+}
+
 .error {
   color:#FF0000;
 }
@@ -200,14 +220,27 @@ a:hover {
   text-decoration: underline;
 }
 
-.feed-action:visited, .feed-action, .feed-action:hover {
-  color: #aaaaaa;
+.action, .action:visited, .action:hover {
+  color: #aaa;
+  cursor: pointer;
   text-decoration: none;
+}
+
+.action:before {
+  content: "[";
+}
+
+.action:after {
+  content: "]";
 }
 
 .feed-updated {
   font-size: 8pt;
   color: #009900;
+}
+
+.feed-date {
+  font-size: 80%;
 }
 
 .notification {
@@ -229,13 +262,13 @@ ul.button-list li{
 }
 
 ul a.button {
-  border: 1px #aaa solid; 
-  -moz-border-radius: 12px; 
-  background: #ddd url('chrome://ubiquity/skin/buttons/grad.png') 0 0 repeat-x; 
-  display: block; 
-  float: left; 
+  border: 1px #aaa solid;
+  -moz-border-radius: 12px;
+  background: #ddd url('chrome://ubiquity/skin/buttons/grad.png') 0 0 repeat-x;
+  display: block;
+  float: left;
   padding: 0 2em;
-  height: 22px; 
+  height: 22px;
   color: black;
   text-decoration: none;
   text-align: center;
@@ -244,45 +277,12 @@ ul a.button {
   outline: none;
 }
 ul a:active.button {
-  background-color: #cdcdcd; 
+  background-color: #cdcdcd;
   background-position: 0 -22px;
 }
 
-ul#command-feeds {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-ul#command-feeds li {
-  padding-bottom: .5em;
-}
-
-ul#command-feeds ul {
-  list-style: none;
-  padding-left: 20px;
-}
-
-ul#command-feeds ul:after {
-  content: ".";
-  display: block;
-  height: 0;
-  clear: both;
-  visibility: hidden;
-}
-
-ul#command-feeds ul li {
-  float: left;
-  white-space: nowrap;
-  padding-bottom: 0;
-}
-
-ul#command-feeds ul li:after {
-  content: ",";
-}
-
-ul#command-feeds ul li:last-child:after {
-  content: "";
+td.command-feed-name {
+  font-size: 18px;
 }
 
 ul#command-feed-graveyard {
@@ -320,4 +320,49 @@ ul#command-feed-graveyard ul li:after {
 
 ul#command-feed-graveyard ul li:last-child:after {
   content: "";
+}
+
+#commands-and-feeds-table td {
+  vertical-align: top;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th {
+  font-variant: small-caps;
+  font-size: 18pt;
+}
+
+td.topcell {
+  border-top: 1px solid black;
+}
+
+.ubiq-tutorial {
+  border-style:solid;
+  border-color:green;
+  padding: 2em;
+  font-size: 120%;
+}
+
+div.ubiq-tutorial h2 {
+  color: black;
+  text-align: center;
+  font-variant: normal;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.badge {
+  border-width: 0;
+  float: right;
+/*  position: absolute;*/
+  top: 0px;
+  right: 0px;
+}
+
+.badge a img {
+  border: none;
 }

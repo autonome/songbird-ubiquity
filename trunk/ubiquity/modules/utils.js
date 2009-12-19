@@ -21,6 +21,7 @@
  *   Atul Varma <atul@mozilla.com>
  *   Blair McBride <unfocused@gmail.com>
  *   Jono DiCarlo <jdicarlo@mozilla.com>
+ *   Satoshi Murakami <murky.satyr@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -47,13 +48,125 @@ var EXPORTED_SYMBOLS = ["Utils"];
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
-var Utils = {};
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-// Keep a reference to the global object, as certain utility functions
-// need it.
-Utils.__globalObject = this;
+var Utils = {
+  // === {{{ Utils.currentChromeWindow }}} ===
+  //
+  // This property is a reference to the application chrome window
+  // that currently has focus.
 
-// ** {{{ Utils.reportWarning() }}} **
+  get currentChromeWindow() (Cc["@mozilla.org/appshell/window-mediator;1"]
+                             .getService(Ci.nsIWindowMediator)
+                             .getMostRecentWindow(Utils.appWindowType)),
+
+  __globalObject: this,
+};
+
+[
+  // === {{{ Utils.Application }}} ===
+  //
+  // Shortcut to
+  // [[https://developer.mozilla.org/en/FUEL/Application|Application]].
+  function Application() (Cc["@mozilla.org/fuel/application;1"]
+                          .getService(Ci.fuelIApplication)),
+
+  // === {{{ Utils.json }}} ===
+  //
+  // Shortcut to {{{nsIJSON}}}.
+
+  function json() Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON),
+
+  // === {{{ Utils.appName }}} ===
+  //
+  // This property provides the chrome application name
+  // found in {{{nsIXULAppInfo}}}.
+  // Examples values are "Firefox", "Songbird", "Thunderbird".
+
+  function appName() (Cc["@mozilla.org/xre/app-info;1"]
+                      .getService(Ci.nsIXULAppInfo)
+                      .name),
+
+  // === {{{ Utils.appWindowType }}} ===
+  //
+  // This property provides the name of "main" application windows for the chrome
+  // application.
+  // Examples values are "navigator:browser" for Firefox", and
+  // "Songbird:Main" for Songbird.
+
+  function appWindowType() ({
+    Songbird: "Songbird:Main",
+  })[Utils.appName] || "navigator:browser",
+
+  // === {{{ Utils.OS }}} ===
+  //
+  // This property provides the platform name found in {{{nsIXULRuntime}}}.
+  // See: https://developer.mozilla.org/en/OS_TARGET
+
+  function OS() (Cc["@mozilla.org/xre/app-info;1"]
+                 .getService(Ci.nsIXULRuntime)
+                 .OS),
+
+  ].forEach(function eachGetter(func) {
+    Utils.__defineGetter__(func.name, function lazyGetter() {
+      delete Utils[func.name];
+      return Utils[func.name] = func();
+    });
+  });
+
+for each (let f in this) if (typeof f === "function") Utils[f.name] = f;
+
+// === {{{ Utils.log(a, b, c, ...) }}} ===
+//
+// One of the most useful functions to know both for development
+// and debugging. This logging function takes
+// an arbitrary number of arguments and will log them to the most
+// appropriate output. If you have Firebug, the output will go to its
+// console. Otherwise, the output will be routed to the Javascript
+// Console.
+//
+// {{{Utils.log}}} implements smart pretty print, so you
+// can use it for inspecting arrays and objects.
+// For details, see: http://getfirebug.com/console.html
+//
+// {{{a, b, c, ...}}} is an arbitrary list of things to be logged.
+
+function log(what) {
+  if (!arguments.length) return;
+
+  var args = Array.slice(arguments), logPrefix = "Ubiquity:";
+  if (typeof what === "string") logPrefix += " " + args.shift();
+
+  var {Firebug} = Utils.currentChromeWindow;
+  if (Firebug && Firebug.toggleBar(true)) {
+    args.unshift(logPrefix);
+    Firebug.Console.logFormatted(args);
+    return;
+  }
+
+  Utils.Application.console.log(
+    args.reduce(
+      function log_acc(msg, arg) msg + " " + pp(arg),
+      logPrefix.replace(/%[sdifo]/g, function format($) {
+        if (!args.length) return $;
+        var a = args.shift();
+        switch ($) {
+          case "%s": return a;
+          case "%d":
+          case "%i": return parseInt(a);
+          case "%f": return parseFloat(a);
+        }
+        return pp(a);
+      })));
+  function pp(o) {
+    try { return uneval(o) } catch (e) {
+      try { return Utils.encodeJson(o) }
+      catch (e) { return o }
+    }
+  }
+}
+
+// === {{{ Utils.reportWarning(aMessage, stackFrameNumber) }}} ===
 //
 // This function can be used to report a warning to the JS Error Console,
 // which can be displayed in Firefox by choosing "Error Console" from
@@ -68,7 +181,7 @@ Utils.__globalObject = this;
 // number of the caller is shown in the JS Error Console.  If it's 1,
 // then the line number of the caller's caller is shown.
 
-Utils.reportWarning = function reportWarning(aMessage, stackFrameNumber) {
+function reportWarning(aMessage, stackFrameNumber) {
   var stackFrame = Components.stack.caller;
 
   if (typeof(stackFrameNumber) != "number")
@@ -90,52 +203,44 @@ Utils.reportWarning = function reportWarning(aMessage, stackFrameNumber) {
   scriptError.init(aMessage, aSourceName, aSourceLine, aLineNumber,
                    aColumnNumber, aFlags, aCategory);
   consoleService.logMessage(scriptError);
-};
+}
 
-// ** {{{ Utils.reportInfo() }}} **
+// === {{{ Utils.reportInfo(message) }}} ===
 //
-// Reports a purely informational message to the JS Error Console.
+// Reports a purely informational {{{message}}} to the JS Error Console.
 // Source code links aren't provided for informational messages, so
 // unlike {{{Utils.reportWarning()}}}, a stack frame can't be passed
 // in to this function.
 
-Utils.reportInfo = function reportInfo(aMessage) {
+function reportInfo(aMessage) {
   var consoleService = Components.classes["@mozilla.org/consoleservice;1"]
                        .getService(Components.interfaces.nsIConsoleService);
   var aCategory = "ubiquity javascript: ";
   consoleService.logStringMessage(aCategory + aMessage);
-};
+}
 
-// ** {{{ Utils.encodeJson() }}} **
+// === {{{ Utils.encodeJson(object) }}} ===
 //
-// This function serializes the given object using JavaScript Object
+// This function serializes the given {{{object}}} using JavaScript Object
 // Notation (JSON).
 
-Utils.encodeJson = function encodeJson(object) {
-  var json = Cc["@mozilla.org/dom/json;1"]
-             .createInstance(Ci.nsIJSON);
-  return json.encode(object);
-};
+function encodeJson(object) Utils.json.encode(object);
 
-// ** {{{ Utils.decodeJson() }}} **
+// === {{{ Utils.decodeJson(string) }}} ===
 //
-// This function unserializes the given string in JavaScript Object
+// This function unserializes the given {{{string}}} in JavaScript Object
 // Notation (JSON) format and returns the result.
 
-Utils.decodeJson = function decodeJson(string) {
-  var json = Cc["@mozilla.org/dom/json;1"]
-             .createInstance(Ci.nsIJSON);
-  return json.decode(string);
-};
+function decodeJson(string) Utils.json.decode(string);
 
-// ** {{{Utils.ellipsify()}}} **
+// === {{{Utils.ellipsify(node, characters)}}} ===
 //
-// Given a DOM node and a maximum number of characters, returns a
+// Given a DOM {{{node}}} and a maximum number of {{{characters}}}, returns a
 // new DOM node that has the same contents truncated to that number of
 // characters. If any truncation was performed, an ellipsis is placed
 // at the end of the content.
 
-Utils.ellipsify = function ellipsify(node, chars) {
+function ellipsify(node, chars) {
   var doc = node.ownerDocument;
   var copy = node.cloneNode(false);
   if (node.hasChildNodes()) {
@@ -162,7 +267,7 @@ Utils.ellipsify = function ellipsify(node, chars) {
   return copy;
 }
 
-// ** {{{ Utils.setTimeout() }}} **
+// === {{{ Utils.setTimeout(callback, delay, arg1, arg2, ...) }}} ===
 //
 // This function works just like the {{{window.setTimeout()}}} method
 // in content space, but it can only accept a function (not a string)
@@ -175,68 +280,71 @@ Utils.ellipsify = function ellipsify(node, chars) {
 // {{{delay}}} is the delay, in milliseconds, after which the callback
 // will be called once.
 //
+// {{{arg1, arg2 ...}}} are optional arguments that will be passed to
+// the callback.
+//
 // This function returns a timer ID, which can later be given to
 // {{{Utils.clearTimeout()}}} if the client decides that it wants to
 // cancel the callback from being triggered.
 
 // TODO: Allow strings for the first argument like DOM setTimeout() does.
 
-Utils.setTimeout = function setTimeout(callback, delay) {
-  var classObj = Cc["@mozilla.org/timer;1"];
-  var timer = classObj.createInstance(Ci.nsITimer);
-  var timerID = Utils.__timerData.nextID;
-  // emulate window.setTimeout() by incrementing next ID by random amount
-  Utils.__timerData.nextID += Math.floor(Math.random() * 100) + 1;
+function setTimeout(callback, delay /*, arg1, arg2 ...*/) {
+  var timerClass = Cc["@mozilla.org/timer;1"];
+  var timer = timerClass.createInstance(Ci.nsITimer);
+  // emulate window.setTimeout() by incrementing next ID
+  var timerID = Utils.__timerData.nextID++;
   Utils.__timerData.timers[timerID] = timer;
 
-  timer.initWithCallback(new Utils.__TimerCallback(callback),
+  timer.initWithCallback(new Utils.__TimerCallback(callback,
+                                                   Array.slice(arguments, 2)),
                          delay,
-                         classObj.TYPE_ONE_SHOT);
+                         timerClass.TYPE_ONE_SHOT);
   return timerID;
-};
+}
 
-// ** {{{ Utils.clearTimeout() }}} **
+// === {{{ Utils.clearTimeout(timerID) }}} ===
 //
 // This function behaves like the {{{window.clearTimeout()}}} function
 // in content space, and cancels the callback with the given timer ID
 // from ever being called.
 
-Utils.clearTimeout = function clearTimeout(timerID) {
-  if(!(timerID in Utils.__timerData.timers))
-    return;
-
-  var timer = Utils.__timerData.timers[timerID];
-  timer.cancel();
-  delete Utils.__timerData.timers[timerID];
-};
+function clearTimeout(timerID) {
+  var {timers} = Utils.__timerData;
+  var timer = timers[timerID];
+  if (timer) {
+    timer.cancel();
+    delete timers[timerID];
+  }
+}
 
 // Support infrastructure for the timeout-related functions.
 
-Utils.__TimerCallback = function __TimerCallback(callback) {
-  Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
+Utils.__TimerCallback = function __TimerCallback(callback, args) {
   this._callback = callback;
+  this._args = args;
   this.QueryInterface = XPCOMUtils.generateQI([Ci.nsITimerCallback]);
 };
 
 Utils.__TimerCallback.prototype = {
   notify : function notify(timer) {
-    for(timerID in Utils.__timerData.timers) {
-      if(Utils.__timerData.timers[timerID] == timer) {
-        delete Utils.__timerData.timers[timerID];
+    var {timers} = Utils.__timerData;
+    for (let timerID in timers)
+      if (timers[timerID] === timer) {
+        delete timers[timerID];
         break;
       }
-    }
-    this._callback();
+    this._callback.apply(null, this._args);
   }
 };
 
 Utils.__timerData = {
-  nextID: Math.floor(Math.random() * 100) + 1,
+  nextID: 1,
   timers: {}
 };
 
-// ** {{{ Utils.url() }}} **
+// === {{{ Utils.uri(spec, defaultUrl) }}} ===
+// === {{{ Utils.url() }}} ===
 //
 // Given a string representing an absolute URL or a {{{nsIURI}}}
 // object, returns an equivalent {{{nsIURI}}} object.  Alternatively,
@@ -253,30 +361,30 @@ Utils.__timerData = {
 // An optional second argument may also be passed in, which specifies
 // a default URL to return if the given URL can't be parsed.
 
-Utils.url = function url(spec, defaultUri) {
+function uri(spec, defaultUri) {
   var base = null;
-  if (typeof(spec) == "object") {
+  if (typeof spec === "object") {
     if (spec instanceof Ci.nsIURI)
-      // nsIURL object was passed in, so just return it back
+      // nsIURI object was passed in, so just return it back
       return spec;
 
     // Assume jQuery-style dictionary with keyword args was passed in.
-    base = spec.base ? Utils.url(spec.base, defaultUri) : null;
-    spec = spec.uri ? spec.uri : null;
+    base = spec.base ? uri(spec.base, defaultUri) : null;
+    spec = spec.uri || null;
   }
 
-  var ios = Cc["@mozilla.org/network/io-service;1"]
-    .getService(Ci.nsIIOService);
-
+  var ios = (Cc["@mozilla.org/network/io-service;1"]
+             .getService(Ci.nsIIOService));
   try {
     return ios.newURI(spec, null, base);
-  } catch (e if (e.result == Components.results.NS_ERROR_MALFORMED_URI) &&
-           defaultUri) {
+  } catch (e if (e.result === Components.results.NS_ERROR_MALFORMED_URI &&
+                 defaultUri)) {
     return Utils.url(defaultUri);
   }
-};
+}
+Utils.url = uri;
 
-// ** {{{ Utils.openUrlInBrowser() }}} **
+// === {{{ Utils.openUrlInBrowser(urlString, postData) }}} ===
 //
 // This function opens the given URL in the user's browser, using
 // their current preferences for how new URLs should be opened (e.g.,
@@ -290,21 +398,21 @@ Utils.url = function url(spec, defaultUri) {
 // with keys and values corresponding to their POST analogues, or an
 // {{{nsIInputStream}}}.
 
-Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
+function openUrlInBrowser(urlString, postData) {
   var postInputStream = null;
-  if(postData) {
-    if(postData instanceof Ci.nsIInputStream) {
+  if (postData) {
+    if (postData instanceof Ci.nsIInputStream) {
       postInputStream = postData;
     } else {
-      if(typeof postData == "object") // json -> string
-        postData = Utils.paramsToString(postData);
+      if (typeof postData === "object") // json -> string
+        postData = Utils.paramsToString(postData, "");
 
-      var stringStream = Cc["@mozilla.org/io/string-input-stream;1"]
-        .createInstance(Ci.nsIStringInputStream);
+      var stringStream = (Cc["@mozilla.org/io/string-input-stream;1"]
+                          .createInstance(Ci.nsIStringInputStream));
       stringStream.data = postData;
 
-      postInputStream = Cc["@mozilla.org/network/mime-input-stream;1"]
-        .createInstance(Ci.nsIMIMEInputStream);
+      postInputStream = (Cc["@mozilla.org/network/mime-input-stream;1"]
+                         .createInstance(Ci.nsIMIMEInputStream));
       postInputStream.addHeader("Content-Type",
                                 "application/x-www-form-urlencoded");
       postInputStream.addContentLength = true;
@@ -315,218 +423,218 @@ Utils.openUrlInBrowser = function openUrlInBrowser(urlString, postData) {
   var browserWindow = Utils.currentChromeWindow;
   var browser = browserWindow.getBrowser();
 
-  var prefService = Cc["@mozilla.org/preferences-service;1"]
-    .getService(Ci.nsIPrefBranch);
+  var prefService = (Cc["@mozilla.org/preferences-service;1"]
+                     .getService(Ci.nsIPrefBranch));
   var openPref = prefService.getIntPref("browser.link.open_newwindow");
 
   //2 (default in SeaMonkey and Firefox 1.5): In a new window
   //3 (default in Firefox 2 and above): In a new tab
   //1 (or anything else): In the current tab or window
 
-  if(browser.mCurrentBrowser.currentURI.spec == "about:blank" &&
-     !browser.webProgress.isLoadingDocument )
+  if (browser.mCurrentBrowser.currentURI.spec === "about:blank" &&
+      !browser.webProgress.isLoadingDocument)
     browserWindow.loadURI(urlString, null, postInputStream, false);
-  else if(openPref == 3)
-    browser.loadOneTab(urlString, null, null, postInputStream, false, false);
-  else if(openPref == 2)
+  else if (openPref === 3) {
+    let {shiftKey} = (browserWindow.gUbiquity || 0).lastKeyEvent || 0;
+    browser[shiftKey ? 'addTab' : 'loadOneTab'](
+      urlString, null, null, postInputStream, false, false);
+  }
+  else if (openPref === 2)
     browserWindow.openDialog('chrome://browser/content', '_blank',
                              'all,dialog=no', urlString, null, null,
                              postInputStream);
   else
     browserWindow.loadURI(urlString, null, postInputStream, false);
-};
+}
 
-// ** {{{ Utils.focusUrlInBrowser() }}} **
+// === {{{ Utils.focusUrlInBrowser(urlString) }}} ===
 //
 // This function focuses a tab with the given URL if one exists in the
 // current window; otherwise, it delegates the opening of the URL in a
 // new window or tab to {{{Utils.openUrlInBrowser()}}}.
 
-Utils.focusUrlInBrowser = function focusUrlInBrowser(urlString) {
-  let Application = Components.classes["@mozilla.org/fuel/application;1"]
-                    .getService(Components.interfaces.fuelIApplication);
-
-  var tabs = Application.activeWindow.tabs;
-  for (var i = 0; i < tabs.length; i++)
-    if (tabs[i].uri.spec == urlString) {
-      tabs[i].focus();
+function focusUrlInBrowser(urlString) {
+  for each (let tab in Utils.Application.activeWindow.tabs)
+    if (tab.uri.spec === urlString) {
+      tab.focus();
       return;
     }
   Utils.openUrlInBrowser(urlString);
-};
+}
 
-// ** {{{ Utils.getCookie() }}} **
+// === {{{ Utils.getCookie(domain, name) }}} ===
 //
-// This function returns the cookie for the given domain and with the
-// given name.  If no matching cookie exists, {{{null}}} is returned.
+// This function returns the cookie for the given {{{domain}}} and with the
+// given {{{name}}}.  If no matching cookie exists, {{{null}}} is returned.
 
-Utils.getCookie = function getCookie(domain, name) {
+function getCookie(domain, name) {
   var cookieManager = Cc["@mozilla.org/cookiemanager;1"].
                       getService(Ci.nsICookieManager);
-
-  var iter = cookieManager.enumerator;
+  var iter = cookieManager.enumerator, {nsICookie} = Ci;
   while (iter.hasMoreElements()) {
     var cookie = iter.getNext();
-    if (cookie instanceof Ci.nsICookie)
-      if (cookie.host == domain && cookie.name == name )
+    if (cookie instanceof nsICookie &&
+        cookie.host == domain &&
+        cookie.name == name)
         return cookie.value;
   }
   // if no matching cookie:
   return null;
-};
+}
 
-// ** {{{ Utils.paramsToString() }}} **
+// === {{{ Utils.paramsToString(params, prefix = "?") }}} ===
 //
 // This function takes the given Object containing keys and
 // values into a querystring suitable for inclusion in an HTTP
 // GET or POST request.
+//
+// {{{params}}} is the key-value pairs.
+//
+// {{{prefix}}} is an optional string prepended to the result,
+// which defaults to {{{"?"}}}.
 
-Utils.paramsToString = function paramsToString(params) {
+function paramsToString(params, prefix) {
   var stringPairs = [];
-  function valueTypeIsOk(val) {
-    if (typeof val == "function")
-      return false;
-    if (val === undefined)
-      return false;
-    if (val === null)
-      return false;
-    return true;
-  }
   function addPair(key, value) {
-    if (valueTypeIsOk(value)) {
+    // note: explicitly ignoring values that are functions/null/undefined!
+    if (typeof value !== "function" && value != null)
       stringPairs.push(
-        encodeURIComponent(key) + "=" + encodeURIComponent(value.toString())
-      );
-    }
+        encodeURIComponent(key) + "=" + encodeURIComponent(value));
   }
-  for (key in params) {
-    // note: explicitly ignoring values that are objects/functions/undefined!
+  for (var key in params) {
     if (Utils.isArray(params[key])) {
-      params[key].forEach(function(item) {
-        addPair(key + "[]", item);
+      params[key].forEach(function p2s_each(item) {
+        addPair(key, item);
       });
     } else {
       addPair(key, params[key]);
     };
   }
-  return "?" + stringPairs.join("&");
-};
+  return (prefix == null ? "?" : prefix) + stringPairs.join("&");
+}
 
-// ** {{{ Utils.urlToParams() }}} **
+// === {{{ Utils.urlToParams(urlString) }}} ===
 //
 // This function takes the given url and returns an Object containing keys and
-// values retrieved from its query-part
+// values retrieved from its query-part.
 
-Utils.urlToParams = function urlToParams(url) {
-  function isArray(key) {
-    return (key.substring(key.length-2)=="[]");
-  }
+function urlToParams(url) {
   var params = {};
-  var paramList = url.substring(url.indexOf("?")+1).split("&");
-  for (param in paramList) {
-    var key="",
-        value="";
-    var kv = paramList[param].split("=");
-    try {
-      key = kv[0];
-      value = decodeURIComponent(kv[1]).replace(/\+/g," ");
-    }
-    catch (e){};
-    if (isArray(key)) {
-      key = key.substring(0,key.length-2);
-      if (params[key]) {
-        params[key].push(value);
-      }
-      else {
-        params[key]=[value];
-      }
-    }
-    else {
-      params[key] = value;
-    }
+  for each (let param in url.slice(url.indexOf("?") + 1).split("&")) {
+    var [key, val] = param.split("=");
+    val = val ? val.replace(/\+/g, " ") : "";
+    try { val = decodeURIComponent(val) } catch (e) {};
+    params[key] = (key in params
+                   ? [].concat(params[key], val)
+                   : val);
   }
   return params;
 }
 
-// ** {{{ Utils.getLocalUrl() }}} **
+// === {{{ Utils.getLocalUrl(urlString, charset) }}} ===
 //
 // This function synchronously retrieves the content of the given
 // local URL, such as a {{{file:}}} or {{{chrome:}}} URL, and returns
 // it.
+//
+// {{{url}}} is the URL to retrieve.
+//
+// {{{charset}}} is an optional string to specify the character set.
 
-Utils.getLocalUrl = function getLocalUrl(url) {
+function getLocalUrl(url, charset) {
   var req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
             .createInstance(Ci.nsIXMLHttpRequest);
-  req.open('GET', url, false);
-  req.overrideMimeType("text/plain");
+  req.open("GET", url, false);
+  req.overrideMimeType("text/plain" + (charset ? ";charset=" + charset : ""));
   req.send(null);
-  if (req.status == 0)
+  if (req.status === 0)
     return req.responseText;
   else
     throw new Error("Failed to get " + url);
-};
+}
 
-// ** {{{ Utils.trim() }}} **
+// === {{{ Utils.trim(str) }}} ===
 //
 // This function removes all whitespace surrounding a string and
 // returns the result.
 
-Utils.trim = function trim(str) {
-  return str.replace(/^\s+|\s+$/g,"");
+Utils.trim = String.trim || function trim(str) {
+  http://blog.stevenlevithan.com/archives/faster-trim-javascript
+  var i = str.search(/\S/);
+  if (i < 0) return "";
+  var j = str.length;
+  while (/\s/.test(str[--j]));
+  return str.slice(i, j + 1);
 };
 
-// ** {{{ Utils.isArray() }}} **
+// === {{{ Utils.sortBy(array, key) }}} ===
 //
-// This function returns whether or not its parameter is an instance
-// of a JavaScript Array object.
+// Sorts an array by specified {{{key}}} and returns it. e.g.:
+// {{{
+// Utils.sortBy(["abc", "d", "ef"], "length") //=> ["d", "ef", "abc"]
+// Utils.sortBy([1, 2, 3], function (x) -x) //=> [3, 2, 1]
+// }}}
+//
+// {{{array}}} is the target array.
+//
+// {{{key}}} is either a string specifying the key property,
+// or a function that maps each of {{{array}}}'s item to a sort key.
 
-Utils.isArray = function isArray(val) {
-  if (typeof val != "object")
-    return false;
-  if (val == null)
-    return false;
-  if (!val.constructor || val.constructor.name != "Array")
-    return false;
-  return true;
+function sortBy(array, key) {
+  var pluck = typeof key === "function" ? key : function pluck(x) x[key];
+  var sortee = ([{key: pluck(array[i]), val: array[i]} for (i in array)]
+                .sort(sortBy.sorter));
+  for (let i in sortee) array[i] = sortee[i].val;
+  return array;
 }
+// Because our Monkey uses Merge Sort, "swap the values if plus" works.
+sortBy.sorter = function byKey(a, b) a.key <= b.key ^ 1;
 
-// == {{{ Utils.History }}} ==
+// === {{{ Utils.isArray(value) }}} ===
 //
-// This object contains functions that make it easy to access
-// information about the user's browsing history.
+// This function returns whether or not the {{{value}}} is an instance
+// of {{{Array}}}.
 
-Utils.History = {
+function isArray(val) ((val != null &&
+                        typeof val === "object" &&
+                        (val.constructor || 0).name === "Array"));
 
-  // ** {{{ Utils.History.visitsToDomain() }}} **
-  //
-  // This function returns the number of times the user has visited
-  // the given domain name.
+// === {{{ Utils.isEmpty(value) }}} ===
+//
+// This function returns whether or not the {{{value}}} has no own properties.
 
-  visitsToDomain : function visitsToDomain( domain ) {
+function isEmpty(val) val == null || !val.__count__;
 
-      var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
-               getService(Ci.nsINavHistoryService);
+// === {{{ Utils.classOf(value) }}} ===
+//
+// This function returns the internal {{{[[Class]]}}} property of
+// the {{{value}}}.
+// ref. http://bit.ly/CkhjS#instanceof-considered-harmful
 
-      var query = hs.getNewQuery();
-      var options = hs.getNewQueryOptions();
+function classOf(val) Object.prototype.toString.call(val).slice(8, -1);
 
-      options.maxResults = 10;
-      query.domain = domain;
+// === {{{ Utils.powerSet(array) }}} ===
+//
+// The "power set" of a set
+// is a set of all the subsets of the original set.
+// For example: a power set of [1,2] is [[],[1],[2],[1,2]]
+//
+// This works by a reduce operation... it starts by setting last = [[]],
+// then recursively looking through all of the elements of the original
+// set. For each element e_n (current), it takes each set in the power set
+// of e_{n-1} and makes a copy of each with e_n added in (that's the
+// .concat[current]). It then adds those copies to last (hence last.concat)
+// It starts with last = [[]] because the power set of [] is [[]]. ^^
+//
+// code from http://twitter.com/mitchoyoshitaka/status/1489386225
 
-      // execute query
-      var result = hs.executeQuery(query, options );
-      var root = result.root;
-      root.containerOpen = true;
-      var count = 0;
-      for( var i=0; i < root.childCount; ++i ) {
-        place = root.getChild( i );
-        count += place.accessCount;
-      }
-    return count;
-  }
-};
+function powerSet(array) (
+  array.reduce(
+    function pS_acc(last, current) last.concat([a.concat(current)
+                                                for each (a in last)]),
+    [[]]));
 
-// ** {{{ Utils.computeCryptoHash() }}} **
+// === {{{ Utils.computeCryptoHash(algo, str) }}} ===
 //
 // Computes and returns a cryptographic hash for a string given an
 // algorithm.
@@ -537,7 +645,7 @@ Utils.History = {
 //
 // {{{str}}} is the string to be hashed.
 
-Utils.computeCryptoHash = function computeCryptoHash(algo, str) {
+function computeCryptoHash(algo, str) {
   var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
                   .createInstance(Ci.nsIScriptableUnicodeConverter);
   converter.charset = "UTF-8";
@@ -555,25 +663,53 @@ Utils.computeCryptoHash = function computeCryptoHash(algo, str) {
   var hashString = [toHexString(hash.charCodeAt(i))
                     for (i in hash)].join("");
   return hashString;
-};
+}
 
-// ** {{{ Utils.escapeHtml() }}} **
+// === {{{ Utils.signHMAC(algo, key, str) }}} ===
+//
+// Computes and returns a cryptographicly signed hash for a string given an
+// algorithm. It is derived from a given key.
+//
+// {{{algo}}} is a string corresponding to a valid hash algorithm.  It
+// can be any one of {{{MD2}}}, {{{MD5}}}, {{{SHA1}}}, {{{SHA256}}},
+// {{{SHA384}}}, or {{{SHA512}}}.
+//
+// {{{key}}} is a key (string) to use to sign
+//
+// {{{str}}} is the string to be hashed.
+
+function signHMAC(algo, key, str) {
+  var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                    .createInstance(Ci.nsIScriptableUnicodeConverter);
+  converter.charset = "UTF-8";
+  var data = converter.convertToByteArray(str, {});
+  var crypto = Cc["@mozilla.org/security/hmac;1"]
+                 .createInstance(Ci.nsICryptoHMAC);
+  var keyObject = Cc["@mozilla.org/security/keyobjectfactory;1"]
+                    .getService(Ci.nsIKeyObjectFactory)
+                    .keyFromString(Ci.nsIKeyObject.HMAC, key);
+  crypto.init(Ci.nsICryptoHMAC[algo], keyObject);
+  crypto.update(data, data.length);
+  var hash = crypto.finish(true);
+  return hash;
+}
+
+// === {{{ Utils.escapeHtml(str) }}} ===
 //
 // This function returns a version of the string safe for
 // insertion into HTML. Useful when you just want to
 // concatenate a bunch of strings into an HTML fragment
 // and ensure that everything's escaped properly.
 
-Utils.escapeHtml = function escapeHtml(str) {
-  return str.replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
-};
+function escapeHtml(str) (
+  String(str)
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/\"/g, "&quot;")
+  .replace(/\'/g, "&#39;"));
 
-
-// ** {{{ Utils.convertFromUnicode() }}} **
+// === {{{ Utils.convertFromUnicode(toCharset, text) }}} ===
 //
 // Encodes the given unicode text to a given character set and
 // returns the result.
@@ -583,14 +719,14 @@ Utils.escapeHtml = function escapeHtml(str) {
 //
 // {{{text}}} is a unicode string.
 
-Utils.convertFromUnicode = function convertFromUnicode(toCharset, text) {
+function convertFromUnicode(toCharset, text) {
   var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
                   .getService(Ci.nsIScriptableUnicodeConverter);
   converter.charset = toCharset;
   return converter.ConvertFromUnicode(text);
-};
+}
 
-// ** {{{ Utils.convertToUnicode() }}} **
+// === {{{ Utils.convertToUnicode(fromCharset, text) }}} ===
 //
 // Decodes the given text from a character set to unicode and returns
 // the result.
@@ -601,11 +737,22 @@ Utils.convertFromUnicode = function convertFromUnicode(toCharset, text) {
 // {{{text}}} is a string encoded in the character set
 // {{{fromCharset}}}.
 
-Utils.convertToUnicode = function convertToUnicode(fromCharset, text) {
+function convertToUnicode(fromCharset, text) {
   var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
                   .getService(Ci.nsIScriptableUnicodeConverter);
   converter.charset = fromCharset;
   return converter.ConvertToUnicode(text);
+}
+
+// === {{{ Utils.dump(a, b, c, ...) }}} ===
+//
+// A nicer {{{dump()}}} that
+// displays caller's name, concats arguments and appends a line feed.
+
+Utils.dump = function niceDump() {
+  var {caller} = arguments.callee;
+  dump((caller ? caller.name + ": " : "") +
+       Array.join(arguments, " ") + "\n");
 };
 
 // == {{{ Utils.tabs }}} ==
@@ -613,271 +760,152 @@ Utils.convertToUnicode = function convertToUnicode(fromCharset, text) {
 // This Object contains functions related to Firefox tabs.
 
 Utils.tabs = {
-
-  // ** {{{ Utils.tabs.get() }}} **
+  // === {{{ Utils.tabs.get(name) }}} ===
   //
-  // Gets open tabs.
+  // Gets an array of open tabs.
   //
-  // {{{aName}}} is an optional string tab name.  If supplied, this
-  // function will return the named tab or null.
-  //
-  // This function returns a a hash of tab names to tab references; or,
-  // if a name parameter is passed, it returns the matching tab
-  // reference or null.
+  // {{{name}}} is an optional string tab name (title or URL).
+  // If supplied, this function returns tabs that exactly match with it.
 
-  get: function Utils_tabs_get(aName) {
-    if (aName)
-      return this._cache[aName] || null;
-
-    return this._cache;
+  get: function tabs_get(name) {
+    var tabs = [], {push} = tabs;
+    for each (let win in Utils.Application.windows)
+      push.apply(tabs, win.tabs);
+    return (name == null
+            ? tabs
+            : tabs.filter(function({document: d})(d.title === name ||
+                                                  d.URL   === name)));
   },
 
-  // ** {{{ Utils.tabs.search() }}} **
+  // === {{{ Utils.tabs.search(matcher, maxResults) }}} ===
   //
-  // This function searches for tabs by tab name and returns a hash of
-  // tab names to tab references.
+  // Searches for tabs by title or URL and returns an array of tab references.
+  // The match result is set to {{{tab.match}}}.
   //
-  // {{{aSearchText}}} is a string specifying the text to search for.
+  // {{{matcher}}} is a string or {{{RegExp}}} object to match with.
   //
-  // {{{aMaxResults}}} is an integer specifying the maximum number of
-  // results to return.
+  // {{{maxResults}}} is an optinal integer specifying
+  // the maximum number of results to return.
 
-  search: function Utils_tabs_search(aSearchText, aMaxResults) {
-    var matches = {};
-    var matchCount = 0;
-    for (var name in this._cache) {
-       var tab = this._cache[name];
-      //TODO: implement a better match algorithm
-      if (name.match(aSearchText, "i") ||
-          (tab.document.URL && tab.document.URL.toString().match(aSearchText, "i"))) {
-        matches[name] = tab;
-        matchCount++;
-      }
-      if (aMaxResults && aMaxResults == matchCount)
-        break;
+  search: function tabs_search(matcher, maxResults) {
+    var results = [];
+    if (classOf(matcher) !== "RegExp") try {
+      matcher = RegExp(matcher, "i");
+    } catch (e if e instanceof SyntaxError) {
+      matcher = RegExp(String(matcher).replace(/\W/g, "\\$&"), "i");
     }
-    return matches;
-  },
-
-  // Handles TabOpen, TabClose and load events; clears tab cache.
-
-  onTabEvent: function(aEvent, aTab) {
-    switch ( aEvent.type ) {
-      case "TabOpen":
-        // this is received before the page content has loaded.
-        // so need to find the new tab, and add a load
-        // listener to it, and only then add it to the cache.
-        // TODO: once bug 470163 is fixed, can move to a much
-        // cleaner way of doing this.
-        var self = this;
-        var windowCount = this.Application.windows.length;
-        for( var i=0; i < windowCount; i++ ) {
-          var window = this.Application.windows[i];
-          var tabCount = window.tabs.length;
-          for (var j = 0; j < tabCount; j++) {
-            let tab = window.tabs[j];
-            if (!this._cache[tab.document.title]) {
-              // add a load listener to the tab
-              // and add the tab to the cache after it has loaded.
-              tab.events.addListener("load", function(aEvent) {
-                self.onTabEvent(aEvent, tab);
-              });
-            }
-          }
+    if (maxResults == null) maxResults = 1/0;
+    var keys = ["title", "URL"];
+    for each (let win in Utils.Application.windows)
+      for each (let tab in win.tabs) {
+        for each (let key in keys) {
+          let match = matcher(tab.document[key]);
+          if (!match) continue;
+          tab.match = match;
+          if (results.push(tab) >= maxResults) return results;
+          break;
         }
-        break;
-      case "TabClose":
-        // for TabClose events, invalidate the cache.
-        // TODO: once bug 470163 is fixed, can just delete the tab from
-        // from the cache, instead of invalidating the entire thing.
-        this.__cache = null;
-        break;
-      case "load":
-        // handle new tab page loads, and reloads of existing tabs
-        if (aTab && aTab.document.title) {
-
-          // if a tab with this title is not cached, add it
-          if (!this._cache[aTab.document.title])
-            this._cache[aTab.document.title] = aTab;
-
-          // evict previous cache entries for the tab
-          for (var title in this._cache) {
-            if (this._cache[title] == aTab && title != aTab.document.title) {
-              // if the cache contains an entry for this tab, and the title
-              // differs from the tab's current title, then evict the entry.
-              delete this._cache[title];
-              break;
-            }
-          }
-        }
-        break;
-    }
-  },
-
-  // Smart-getter for FUEL.
-
-  get Application() {
-    delete this.Application;
-    return this.Application = Cc["@mozilla.org/fuel/application;1"]
-                              .getService(Ci.fuelIApplication);
-  },
-
-   // Getter for the tab cache; manages reloading the cache.
-
-  __cache: null,
-  get _cache() {
-    if (this.__cache)
-      return this.__cache;
-
-    this.__cache = {};
-    var windowCount = this.Application.windows.length;
-    for( var j=0; j < windowCount; j++ ) {
-
-      var win = this.Application.windows[j];
-      win.events.addListener(
-        "TabOpen",
-        function(aEvent) { self.onTabEvent(aEvent); }
-      );
-      win.events.addListener(
-        "TabClose",
-        function(aEvent) { self.onTabEvent(aEvent); }
-      );
-
-      var tabCount = win.tabs.length;
-      for (var i = 0; i < tabCount; i++) {
-
-        let tab = win.tabs[i];
-
-        // add load listener to tab
-        var self = this;
-        tab.events.addListener("load", function(aEvent) {
-          self.onTabEvent(aEvent, tab);
-        });
-
-        // add tab to cache
-        this.__cache[tab.document.title] = tab;
       }
-    }
+    return results;
+  },
 
-    return this.__cache;
-  }
+  // === {{{ Utils.tabs.reload(matcher) }}} ===
+  //
+  // Reloads all matched tabs.
+  //
+  // {{{matcher}}} is a string or {{{RegExp}}} object to match with.
+
+  reload: function tabs_reload(matcher) {
+    for each (let tab in Utils.tabs.search(matcher))
+      tab._browser.reload();
+  },
 };
 
-function AutoCompleteInput(aSearches) {
-    this.searches = aSearches;
-}
+// == {{{ Utils.clipboard }}} ==
+//
+// This object contains functions related to clipboard.
 
-AutoCompleteInput.prototype = {
-    constructor: AutoCompleteInput,
+Utils.clipboard = {
+  // === {{{ Utils.clipboard.text }}} ===
+  //
+  // Gets or sets the clipboard text.
 
-    searches: null,
-
-    minResultsForPopup: 0,
-    timeout: 10,
-    searchParam: "",
-    textValue: "",
-    disableAutoComplete: false,
-    completeDefaultIndex: false,
-
-    get searchCount() {
-        return this.searches.length;
-    },
-
-    getSearchAt: function(aIndex) {
-        return this.searches[aIndex];
-    },
-
-    onSearchBegin: function() {},
-    onSearchComplete: function() {},
-
-    popupOpen: false,
-
-    popup: {
-        setSelectedIndex: function(aIndex) {},
-        invalidate: function() {},
-
-        // nsISupports implementation
-        QueryInterface: function(iid) {
-            if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIAutoCompletePopup)) return this;
-
-            throw Components.results.NS_ERROR_NO_INTERFACE;
-        }
-    },
-
-    // nsISupports implementation
-    QueryInterface: function(iid) {
-        if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIAutoCompleteInput)) return this;
-
-        throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+  get text() {
+    var clip = (Cc["@mozilla.org/widget/clipboard;1"]
+                .getService(Ci.nsIClipboard));
+    var trans = (Cc["@mozilla.org/widget/transferable;1"]
+                 .createInstance(Ci.nsITransferable));
+    trans.addDataFlavor("text/unicode");
+    clip.getData(trans, clip.kGlobalClipboard);
+    var ss = {};
+    trans.getTransferData("text/unicode", ss, {});
+    return ss.value.QueryInterface(Ci.nsISupportsString).toString();
+  },
+  set text(str) {
+    (Cc["@mozilla.org/widget/clipboardhelper;1"]
+     .getService(Ci.nsIClipboardHelper)
+     .copyString(str));
+  },
 };
+
+// == {{{ Utils.history }}} ==
+//
+// This object contains functions that make it easy to access
+// information about the user's browsing history.
 
 Utils.history = {
+  // === {{{ Utils.history.visitsToDomain(domain) }}} ===
+  //
+  // This function returns the number of times the user has visited
+  // the given {{{domain}}} string.
 
-     __createController : function createController(onSearchComplete){
-          var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].getService(Components.interfaces.nsIAutoCompleteController);
+  visitsToDomain: function history_visitsToDomain(domain) {
+    var hs = (Cc["@mozilla.org/browser/nav-history-service;1"]
+              .getService(Ci.nsINavHistoryService));
+    var query = hs.getNewQuery();
+    var options = hs.getNewQueryOptions();
+    query.domain = domain;
+    options.maxResults = 10;
+    // execute query
+    var count = 0;
+    var {root} = hs.executeQuery(query, options);
+    root.containerOpen = true;
+    for (let i = root.childCount; i--;)
+      count += root.getChild(i).accessCount;
+    root.containerOpen = false;
+    return count;
+  },
 
-          var input = new AutoCompleteInput(["history"]);
-          input.onSearchComplete = function(){
-             onSearchComplete(controller);
-          };
-          controller.input = input;
-          return controller;
-     },
+  // === {{{ Utils.history.search(query, callback) }}} ===
+  //
+  // Searches the pages the user has visited.
+  // Given a query string and a callback function, passes an array of results
+  // (objects with {{{url}}}, {{{title}}} and {{{favicon}}} properties)
+  // to the callback.
+  //
+  // {{{query}}} is the query string.
+  //
+  // {{{callback}}} is the function called when the search is complete.
 
-     search : function searchHistory(query, maxResults, callback){
-
-        var ctrlr = this.__createController(function(controller){
-           for (var i = 0; i < controller.matchCount; i++) {
-              var url = controller.getValueAt(i);
-              var title = controller.getCommentAt(i);
-              if (title.length == 0) { title = url; }
-              var favicon = controller.getImageAt(i);
-
-              callback({url : url, title : title, favicon : favicon })
-           }
-        });
-
-        ctrlr.startSearch(query);
-     }
+  search: function history_search(query, callback) {
+    var awesome = (Cc["@mozilla.org/autocomplete/search;1?name=history"]
+                   .getService(Ci.nsIAutoCompleteSearch));
+    awesome.startSearch(query, "", null, {
+      onSearchResult: function hs_onSearchResult(search, result) {
+        switch (result.searchResult) {
+          case result.RESULT_SUCCESS: {
+            let results = [];
+            for (let i = 0, l = result.matchCount; i < l; ++i)
+              results.push({
+                url: result.getValueAt(i),
+                title: result.getCommentAt(i),
+                favicon: result.getImageAt(i),
+              });
+            callback(results);
+          } return;
+        }
+        callback([]);
+      }
+    });
+  },
 };
-
-// ** {{{ Utils.appName }}} **
-//
-// This property provides the chrome application name found in nsIXULAppInfo.name.
-// Examples values are "Firefox", "Songbird", "Thunderbird".
-//
-// TODO: cache the value since it won't change for the life of the application.
-
-Utils.__defineGetter__("appName", function() {
-  return Cc["@mozilla.org/xre/app-info;1"].
-         getService(Ci.nsIXULAppInfo).
-         name;
-});
-
-// ** {{{ Utils.appWindowType }}} **
-//
-// This property provides the name of "main" application windows for the chrome
-// application.
-// Examples values are "navigator:browser" for Firefox", and
-// "Songbird:Main" for Songbird.
-
-Utils.__defineGetter__("appWindowType", function() {
-  switch(Utils.appName) {
-    case "Songbird":
-      return "Songbird:Main";
-    default:
-      return "navigator:browser";
-  }
-});
-
-// ** {{{ Utils.currentChromeWindow }}} **
-//
-// This property is a reference to the application chrome window
-// that currently has focus.
-
-Utils.__defineGetter__("currentChromeWindow", function() {
-  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
-           getService(Ci.nsIWindowMediator);
-  return wm.getMostRecentWindow(Utils.appWindowType);
-});

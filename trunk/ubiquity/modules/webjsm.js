@@ -49,7 +49,7 @@
 // care must be taken to ensure that any JS libraries loaded don't load
 // remote code from untrusted sources.
 
-let EXPORTED_SYMBOLS = ["WebJsModule"];
+var EXPORTED_SYMBOLS = ["WebJsModule"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -75,8 +75,8 @@ function WebJsModule(callback, window) {
   iframe.setAttribute("src", "chrome://ubiquity/content/hiddenframe.html");
   iframe.addEventListener(
     "pageshow",
-    function onPageShow() {
-      iframe.removeEventListener("pageshow", onPageShow, false);
+    function WJM__onPageShow() {
+      iframe.removeEventListener("pageshow", arguments.callee, false);
 
       // Have our instance dynamically inherit the properties of the
       // hidden window.
@@ -87,7 +87,7 @@ function WebJsModule(callback, window) {
   );
   window.document.documentElement.appendChild(iframe);
 
-  // === {{{WebJsModule.importScript()}}} ===
+  // === {{{WebJsModule#importScript()}}} ===
   //
   // This method is passed a URL that specifies the content-space JS
   // library to load. If the library is already loaded, this method
@@ -96,12 +96,12 @@ function WebJsModule(callback, window) {
   // Once the script is imported, any globals it created can be
   // directly accessed as properties of the {{{WebJsModule}}} instance.
 
-  this.importScript = function importScript(url) {
-    var wind = iframe.contentWindow;
+  this.importScript = function WJM_importScript(url) {
     if (!(url in importedScripts)) {
-      wind.Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-          .getService(Components.interfaces.mozIJSSubScriptLoader)
-          .loadSubScript(url);
+      (iframe.contentWindow
+       .Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
+       .getService(Ci.mozIJSSubScriptLoader)
+       .loadSubScript(url));
       importedScripts[url] = true;
     }
   };
