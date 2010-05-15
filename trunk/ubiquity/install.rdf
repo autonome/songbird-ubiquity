@@ -4,7 +4,7 @@
      xmlns:em="http://www.mozilla.org/2004/em-rdf#">
   <Description about="urn:mozilla:install-manifest">
     <em:id>ubiquity@labs.mozilla.com</em:id>
-    <em:version>0.5.4</em:version>
+    <em:version>0.5.4.1</em:version>
     <em:type>2</em:type>
 
     <!-- Target Application this extension can install into, 
@@ -21,8 +21,8 @@
     <em:targetApplication>
       <Description>
         <em:id>songbird@songbirdnest.com</em:id>
-        <em:minVersion>1.4.1</em:minVersion>
-        <em:maxVersion>1.6.0a</em:maxVersion>
+        <em:minVersion>1.4.3</em:minVersion>
+        <em:maxVersion>1.8.0a</em:maxVersion>
       </Description>
     </em:targetApplication>      
    
