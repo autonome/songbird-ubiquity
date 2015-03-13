@@ -1,0 +1,3 @@
+Ubiquity is an experiment into connecting the Web with language in an attempt to find new user interfaces that make it possible for everyone to do common Web tasks more quickly and easily. It's a Songbird extension, so it works on Macs, Windows, and Linux.
+
+With only a couple keystrokes, it lets you use language to instruct your browser. You can translate to and from most languages, add maps to your email, edit any page, twitter, check your calendar, search, email your friends, and much more. All without leaving the page you're on.
